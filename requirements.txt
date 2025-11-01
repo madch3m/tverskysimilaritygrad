@@ -1,0 +1,25 @@
+# --- Core ---
+torch
+torchvision
+numpy
+
+# --- Config / YAML ---
+pyyaml
+
+# --- Progress bar (optional but nice) ---
+tqdm
+
+# --- Testing ---
+pytest
+
+# --- Optional logging (uncomment if desired) ---
+# tensorboard
+# wandb
+
+# --- Optional Jupyter workflows ---
+# jupyter
+# notebook
+
+# --- Optional formatting / linting tools ---
+# black
+# ruff
