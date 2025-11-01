@@ -1,0 +1,4 @@
+name: resnet18
+params:
+  pretrained: false   # or true if you enable pretrained weights
+  out_dim: 128

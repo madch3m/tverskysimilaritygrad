@@ -1,0 +1,25 @@
+seed: 1337
+dataset:
+  name: mnist
+  params:
+    data_dir: ./data
+    batch_size: 256
+    num_workers: 4
+
+model:
+  backbone:
+    name: simple_cnn
+    params:
+      out_dim: 128
+  head:
+    name: linear       # swap to "tversky"
+    params:
+      in_dim: 128
+      num_classes: 10
+
+train:
+  epochs: 5
+  lr: 1e-3
+  weight_decay: 1e-4
+  device: cuda
+  ckpt_dir: ./checkpoints

@@ -1,0 +1,4 @@
+name: linear
+params:
+  in_dim: 128
+  num_classes: 10
