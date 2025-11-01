@@ -1,0 +1,10 @@
+name: tversky
+params:
+  in_dim: 128
+  num_classes: 10
+  feature_bank_size: 256
+  alpha: 0.5
+  beta: 0.5
+  theta: 1.0
+  intersection: "product"      # options: product | min | max | mean | softmin | gmean
+  difference: "subtractmatch"
