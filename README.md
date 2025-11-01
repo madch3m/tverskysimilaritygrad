@@ -90,46 +90,47 @@ S(a,b) = θ·f(A∩B) – α·f(A–B) – β·f(B–A)
 ### Directory Layout
 ```
 TVERSKY-SIMILARITY-GRAD/
-  configs/              # YAML configs
-    mnist.yaml
-    models/
-      simple_cnn.yaml
-      resnet18.yaml
-    heads/
-      linear.yaml
-      tversky.yaml
-  data/
-    datamodules.py      # MNIST loaders
-    transforms.py
-  models/
-    backbones/
-      simple_cnn.py
-      resnet.py
-    heads/
-      base.py
-      linear_head.py
-      tversky_head.py
-    wrappers/
-      classifier.py
-  registry/
-    registry.py
-  training/
-    engine.py
-    metrics.py
-    utils.py
-  cli/
-    train.py
-    eval.py
-  tests/
-    test_heads.py
-    test_backbones.py
-    test_wrapper.py
-    test_datamodule.py
-  notebooks/
-    TverskySimilarity.ipynb
-  scripts/
-    export_onnx.py
-README.md
+    tverskycv/
+        configs/              # YAML configs
+            mnist.yaml
+            models/
+            simple_cnn.yaml
+            resnet18.yaml
+            heads/
+            linear.yaml
+            tversky.yaml
+        data/
+            datamodules.py      # MNIST loaders
+            transforms.py
+        models/
+            backbones/
+            simple_cnn.py
+            resnet.py
+            heads/
+            base.py
+            linear_head.py
+            tversky_head.py
+            wrappers/
+            classifier.py
+        registry/
+            registry.py
+        training/
+            engine.py
+            metrics.py
+            utils.py
+        cli/
+            train.py
+            eval.py
+        notebooks/
+            TverskySimilarity.ipynb
+        scripts/
+            export_onnx.py
+    tests/
+        test_heads.py
+        test_backbones.py
+        test_wrapper.py
+        test_datamodule.py
+    README.md
 ```
 
 ---
@@ -161,7 +162,7 @@ Researchers can use the registry to add new heads/datasets.
 
 ```bash
 git clone <your-repo-url>
-cd TVERSKY-SIMILARITY_GRAD
+cd TVERSKY-SIMILARITY-GRAD
 pip install -r requirements.txt
 ```
 
@@ -173,7 +174,7 @@ pip install -r requirements.txt
 
 Basic:
 ```bash
-python -m TVERSKY-SIMILARITY-GRAD.cli.train --config TVERSKY-SIMILARITY-GRAD/configs/mnist.yaml
+python -m tverskycv.cli.train --config tverskycv/configs/mnist.yaml
 ```
 
 Trained model checkpoints automatically save to:
@@ -183,13 +184,13 @@ Trained model checkpoints automatically save to:
 
 ### Evaluating
 ```bash
-python -m TVERSKY-SIMILARITY-GRAD.cli.eval --config TVERSKY-SIMILARITY-GRAD/configs/mnist.yaml --ckpt path/to/model.pt
+python -m tverskycv.cli.eval --config tverskycv/configs/mnist.yaml --ckpt path/to/model.pt
 ```
 
 ---
 
 ### Swapping Models via Config
-Edit `TVERSKY-SIMILARITY-GRAD/configs/mnist.yaml`:
+Edit `tverskycv/configs/mnist.yaml`:
 
 ```yaml
 model:
@@ -212,7 +213,7 @@ notebooks/TverskySimilarity.ipynb
 
 Usage:
 ```python
-from TVERSKY-SIMILARITY-GRAD.cli.train import main
+from tverskycv.cli.train import main
 main()
 ```
 
