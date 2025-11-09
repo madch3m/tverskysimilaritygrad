@@ -12,6 +12,8 @@ tqdm
 # --- Testing ---
 pytest
 
+transformers
+
 # --- Optional logging (uncomment if desired) ---
 # tensorboard
 # wandb
