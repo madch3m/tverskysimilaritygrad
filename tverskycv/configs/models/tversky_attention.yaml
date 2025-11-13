@@ -1,0 +1,15 @@
+name: tversky_attention
+params:
+  out_dim: 128
+  img_size: 28
+  patch_size: 4
+  in_channels: 1
+  embed_dim: 128
+  num_heads: 8
+  num_layers: 2
+  dropout: 0.1
+  feature_key: main
+  alpha: 0.5
+  beta: 0.5
+  gamma: 1.0
+

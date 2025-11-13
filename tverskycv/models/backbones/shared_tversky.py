@@ -18,6 +18,7 @@ class TverskyAttentionShared(nn.Module):
         self.q_proj = SharedTverskyLinear(embed_dim, embed_dim, feature_key=feature_key,alpha=alpha, beta=beta, gamma=gamma, bias=bias)
         self.k_proj = SharedTverskyLinear(embed_dim,embed_dim, feature_key=feature_key,alpha=alpha,beta=beta,gamma=gamma,bias=bias)
         self.v_proj = SharedTverskyLinear(embed_dim,embed_dim, feature_key=feature_key,alpha=alpha,beta=beta, gamma=gamma, bias=bias)
+        self.out_proj = SharedTverskyLinear(embed_dim, embed_dim, feature_key=feature_key, alpha=alpha, beta=beta, gamma=gamma, bias=bias)
         
         self.attn_dropout = nn.Dropout(dropout)
         self.resid_dropout = nn.Dropout(dropout)
@@ -35,6 +36,11 @@ class TverskyAttentionShared(nn.Module):
         key = self.k_proj(hidden_states)
         value = self.v_proj(hidden_states)
 
+        # Split heads
+        query = self.__split_heads(query, batch_size)
+        key = self.__split_heads(key, batch_size)
+        value = self.__split_heads(value, batch_size)
+
         if layer_past is not None:
             past_key, past_value = layer_past
             key = torch.cat([past_key, key],dim=-2)
@@ -42,22 +48,22 @@ class TverskyAttentionShared(nn.Module):
         present = (key, value) if use_cache else None
 
         attn_weights = torch.matmul(query, key.transpose(-1,-2))
-        attn_weights = self.attn_weights / (self.head_dimm**0.5)
+        attn_weights = attn_weights / (self.head_dim**0.5)  # Fixed: was self.attn_weights and self.head_dimm
 
         if attention_mask is not None:
-            attn_weights = F.softmax(attn_weights, dim=-1)
+            attn_weights = attn_weights.masked_fill(attention_mask == 0, float('-inf'))
         
-        attn_weights = F.softmax(attn_weights,dim=-1)
+        attn_weights = F.softmax(attn_weights, dim=-1)
         attn_weights = self.attn_dropout(attn_weights)
 
         attn_output = torch.matmul(attn_weights, value)
-        attn_output = self._merge_heads(attn_output, batch_size)
+        attn_output = self.__merge_heads(attn_output, batch_size)  # Fixed: was self._merge_heads
         attn_output = self.out_proj(attn_output)
         attn_output = self.resid_dropout(attn_output)
 
         outputs = (attn_output, present)
         if output_attentions:
-            output += (attn_weights,)
+            outputs = outputs + (attn_weights,)  # Fixed: was output +=
         return outputs
 
 class SharedTverskyLinear(nn.Module):
@@ -86,7 +92,7 @@ class SharedTverskyLinear(nn.Module):
                     'beta': nn.Parameter(torch.tensor(beta)),
                     'gamma': nn.Parameter(torch.tensor(gamma))
                 }
-                self.register_feature(param_key, params)
+                self.register_feature.register_feature(param_key, params)  # Fixed: was self.register_feature(param_key, params)
             
             self._param_key = param_key
             self._alpha = None
@@ -107,7 +113,7 @@ class SharedTverskyLinear(nn.Module):
 
     @property
     def features(self):
-        return self.registry.get_feature(self._feature_matrix_key)
+        return self.register_feature.get_feature(self._feature_matrix_key)  # Fixed: was self.registry
     
     @property
     def alpha(self):
@@ -184,7 +190,7 @@ class SharedTverskyNetwork(nn.Module):
         super().__init__()
         self.layer1 = SharedTverskyLinear(embed_dim,intermediate_dim, feature_key=feature_key,alpha=alpha,beta=beta,gamma=gamma)
         self.layer2 = SharedTverskyLinear(intermediate_dim,embed_dim,feature_key=f"{feature_key}_intermediate", alpha=alpha, beta=beta, gamma=gamma)
-        self.act = F.relu()
+        self.act = F.relu  # Fixed: was F.relu()
         self.dropout = nn.Dropout(dropout)
     
     def forward(self, hidden_states):
@@ -208,6 +214,7 @@ class TverskyTransformerBlock(nn.Module):
         self.network = SharedTverskyNetwork(embed_dim=hidden_size, intermediate_dim=inner_dim, feature_key=feature_key, dropout=config.resid_pdrop, alpha=alpha,beta=beta,gamma=gamma)
     def forward(self, hidden_states, attention_mask=None, layer_past=None, use_cache=False, output_attentions=False):
         residual = hidden_states
+        hidden_states = self.ln_1(hidden_states)
         attn_outputs = self.attn(hidden_states, attention_mask=attention_mask, layer_past=layer_past, use_cache=use_cache)
 
         attn_output = attn_outputs[0]
