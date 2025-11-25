@@ -244,7 +244,8 @@ class GlobalFeature:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(cls).__new__(cls)
+            cls._instance = super(GlobalFeature, cls).__new__(cls)
+            cls._instance._feature_matrices = {}
         return cls._instance
     def register_feature(self, key, feature_matrix):
         self._feature_matrices[key] = feature_matrix
