@@ -59,7 +59,7 @@ class TverskyCompact(nn.Module):
         alpha: float = 1.0,
         beta: float = 1.0
     ):
-        super(TverskyCompact, self).__init__()
+        super().__init__()
 
         self.in_features = in_features
         self.n_prototypes = n_prototypes
@@ -169,7 +169,7 @@ class TverskyInterpretable(nn.Module):
         alpha: float = 1.0,
         beta: float = 1.0
     ):
-        super(TverskyInterpretable, self).__init__()
+        super().__init__()
 
         self.in_features = in_features
         self.n_prototypes = n_prototypes
@@ -404,53 +404,5 @@ if __name__ == "__main__":
     # Run comparison
     compare_tversky_variants()
 
-    # Example usage
-    print("\n" + "="*80)
-    print("EXAMPLE USAGE")
-    print("="*80)
 
-    print("\n1. Creating a compact layer for deployment:")
-    print("-" * 80)
-    print("""
-    # For production/deployment - maximum efficiency
-    layer = TverskyCompact(in_features=36, n_prototypes=10)
-
-    # Forward pass
-    x = torch.randn(32, 36)
-    output = layer(x)  # shape: (32, 10)
-
-    print(f"Parameters: {layer.get_num_parameters()}")  # 370
-    """)
-
-    print("\n2. Creating an interpretable layer for research:")
-    print("-" * 80)
-    print("""
-    # For research/analysis - enable visualization
-    layer = TverskyInterpretable(
-        in_features=36,
-        n_prototypes=10,
-        n_features=20
-    )
-
-    # Forward pass
-    x = torch.randn(32, 36)
-    output = layer(x)  # shape: (32, 10)
-
-    # Analyze learned components
-    prototypes, features = layer.get_learned_components()
-    print(f"Prototypes: {prototypes.shape}")  # (10, 20)
-    print(f"Features: {features.shape}")      # (20, 36)
-
-    # Visualize (after training)
-    layer.visualize_prototypes(
-        class_names=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
-        save_path='prototypes.png'
-    )
-
-    # Get feature importance
-    importance = layer.get_feature_importance()
-    print(f"Most important feature: {importance.argmax().item()}")
-
-    print(f"Parameters: {layer.get_num_parameters()}")  # 930
-    """)
 

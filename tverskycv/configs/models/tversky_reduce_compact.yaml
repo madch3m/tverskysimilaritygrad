@@ -1,0 +1,10 @@
+name: tversky_reduce_compact
+params:
+  out_dim: 128
+  in_channels: 3
+  img_size: 28
+  feature_key: main
+  share_features: true
+  alpha: 1.0
+  beta: 1.0
+

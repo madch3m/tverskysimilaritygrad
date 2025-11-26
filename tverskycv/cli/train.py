@@ -11,7 +11,6 @@ from tverskycv.training.utils import set_seed, resolve_device
 from tverskycv.training.optimizers import build_optimizer
 from tverskycv.training.schedulers import build_scheduler
 
-
 def main():
     parser = argparse.ArgumentParser(description="Train a TverskyCV model")
     parser.add_argument("--config", required=True, help="Path to YAML config file")
@@ -76,7 +75,6 @@ def main():
     )
 
     print(f"Best validation accuracy: {stats['best_val_acc']:.4f}")
-
 
 if __name__ == "__main__":
     main()

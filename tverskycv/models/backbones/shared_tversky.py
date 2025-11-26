@@ -2,8 +2,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import torch.optim as optim
-from transformers import GPT2Model, GPT2Config, GPT2Tokenizer
-from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
+
+# Optional transformers import (only needed for TverskyTransformerBlock and related classes)
+try:
+    from transformers import GPT2Model, GPT2Config, GPT2Tokenizer
+    from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    # Define dummy classes to prevent import errors
+    GPT2Model = None
+    GPT2Config = None
+    GPT2Tokenizer = None
+    CausalLMOutputWithCrossAttentions = None
 class TverskyAttentionShared(nn.Module):
     def __init__(self, embed_dim, num_heads, feature_key='main', dropout=0.1, bias=True, alpha=0.5,beta=0.5, gamma=1.0):
         super().__init__()

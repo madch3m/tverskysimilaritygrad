@@ -1,0 +1,47 @@
+seed: 1337
+
+dataset:
+  name: fruits_360  # Hugging Face dataset: PedroSampaio/fruits-360
+  params:
+    dataset_name: PedroSampaio/fruits-360
+    data_dir: ./data
+    batch_size: 32
+    num_workers: 4
+    img_size: 64
+    in_channels: 3
+
+model:
+  backbone:
+    name: tversky_reduce_compact
+    params:
+      out_dim: 128
+      in_channels: 3
+      img_size: 64
+      feature_key: main
+      share_features: true
+      alpha: 1.0
+      beta: 1.0
+  head:
+    name: linear
+    params:
+      in_dim: 128
+      num_classes: 131  # fruits-360 has 131 classes
+
+train:
+  epochs: 10
+  lr: 1e-3
+  weight_decay: 1e-4
+  device: cuda
+  ckpt_dir: ./checkpoints
+  log_every: 50     # training steps
+  eval_every: 1     # epochs
+
+eval:
+  batch_size: 32
+
+logging:
+  use_tensorboard: false
+  use_wandb: false
+  project_name: tverskycv
+  run_name: fruits_360_tversky
+
