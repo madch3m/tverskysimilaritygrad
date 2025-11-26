@@ -1,33 +1,82 @@
-import argparse, yaml, torch, torch.nn as nn, torch.optim as optim
-from ..registry.registry import BACKBONES, HEADS, DATASETS
-from ..models.wrappers.classifiers import ImageClassifier
-from training.engine import train_one_epoch, evaluate
-from training.utils import set_seed, save_ckpt
+# tverskycv/cli/train.py
+import argparse
+import yaml
+import torch
+import torch.nn as nn
+
+from tverskycv.registry import BACKBONES, HEADS, DATASETS
+from tverskycv.models.wrappers.classifiers import ImageClassifier
+from tverskycv.training.engine import fit
+from tverskycv.training.utils import set_seed, resolve_device
+from tverskycv.training.optimizers import build_optimizer
+from tverskycv.training.schedulers import build_scheduler
+
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="tverskycv/configs/mnist.yaml")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description="Train a TverskyCV model")
+    parser.add_argument("--config", required=True, help="Path to YAML config file")
+    args = parser.parse_args()
 
-    cfg = yaml.safe_load(open(args.config))
-    set_seed(cfg["seed"])
+    # -----------------------
+    # Load config
+    # -----------------------
+    cfg = yaml.safe_load(open(args.config, "r"))
+    seed = cfg.get("seed", 42)
+    set_seed(seed)
 
-    dm = DATASETS.get(cfg["dataset"]["name"])(**cfg["dataset"]["params"])
-    backbone = BACKBONES.get(cfg["model"]["backbone"]["name"])(**cfg["model"]["backbone"]["params"])
-    head = HEADS.get(cfg["model"]["head"]["name"])(**cfg["model"]["head"]["params"])
-    model = ImageClassifier(backbone, head).to(cfg["train"]["device"])
+    # -----------------------
+    # Dataset
+    # -----------------------
+    dataset_name = cfg["dataset"]["name"]
+    dataset_params = cfg["dataset"].get("params", {})
+    dm = DATASETS.get(dataset_name)(**dataset_params)
 
-    opt = optim.AdamW(model.parameters(), lr=cfg["train"]["lr"], weight_decay=cfg["train"]["weight_decay"])
+    # -----------------------
+    # Model
+    # -----------------------
+    backbone_cfg = cfg["model"]["backbone"]
+    head_cfg = cfg["model"]["head"]
+
+    backbone = BACKBONES.get(backbone_cfg["name"])(**backbone_cfg.get("params", {}))
+    head = HEADS.get(head_cfg["name"])(**head_cfg.get("params", {}))
+    model = ImageClassifier(backbone, head)
+
+    device = resolve_device(cfg["train"].get("device", None))
+    model.to(device)
+
+    # -----------------------
+    # Optimizer + Scheduler
+    # -----------------------
+    optimizer_cfg = cfg.get("optimizer", {"name": "adamw", "params": {"lr": cfg["train"]["lr"]}})
+    optimizer = build_optimizer(model.parameters(), optimizer_cfg)
+
+    scheduler_cfg = cfg["train"].get("scheduler", None)
+    scheduler = build_scheduler(optimizer, scheduler_cfg)
+
+    # -----------------------
+    # Criterion
+    # -----------------------
     criterion = nn.CrossEntropyLoss()
 
-    best = 0.0
-    for epoch in range(cfg["train"]["epochs"]):
-        train_one_epoch(model, dm.train_dataloader(), opt, criterion, cfg["train"]["device"])
-        acc = evaluate(model, dm.val_dataloader(), cfg["train"]["device"])
-        if acc > best:
-            best = acc
-            save_ckpt(model, opt, acc, cfg["train"]["ckpt_dir"])
-    print(f"best_acc={best:.4f}")
+    # -----------------------
+    # Training
+    # -----------------------
+    print(f"🚀 Starting training on {device} ...")
+
+    stats = fit(
+        model=model,
+        train_loader=dm.train_dataloader(),
+        val_loader=dm.val_dataloader(),
+        optimizer=optimizer,
+        criterion=criterion,
+        device=device,
+        epochs=cfg["train"]["epochs"],
+        scheduler=scheduler,
+        ckpt_dir=cfg["train"]["ckpt_dir"],
+    )
+
+    print(f"Best validation accuracy: {stats['best_val_acc']:.4f}")
+
 
 if __name__ == "__main__":
     main()

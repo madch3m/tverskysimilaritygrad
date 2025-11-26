@@ -27,6 +27,7 @@ ENV/
 # PyCharm
 .idea/
 
+/data
 
 *.log
 logs/
