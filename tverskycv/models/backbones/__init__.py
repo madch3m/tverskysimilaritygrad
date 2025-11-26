@@ -2,6 +2,11 @@ from ...registry.registry import BACKBONES
 from .simple_cnn import SimpleCNN
 from .tversky_attention import TverskyAttentionBackbone
 from .tversky_gpt import create_tversky_gpt_from_config, TverskyGPTModel, count_parameters, get_shared_parameter_info
+from .tversky_reduce_backbone import (
+    TverskyReduceBackbone,
+    SharedTverskyCompact,
+    SharedTverskyInterpretable
+)
 
 @BACKBONES.register("simple_cnn")
 def build_simple_cnn(out_dim: int = 128, **_): return SimpleCNN(out_dim=out_dim)
