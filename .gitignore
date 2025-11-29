@@ -28,6 +28,8 @@ ENV/
 .idea/
 
 /data
+data/
+*.arrow
 
 *.log
 logs/
