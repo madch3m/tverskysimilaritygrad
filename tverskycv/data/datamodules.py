@@ -224,4 +224,3 @@ class Fruits360DataModule:
             num_workers=self.num_workers,
             pin_memory=True if torch.cuda.is_available() else False
         )
->>>>>>> 1f0c45d (Adding early checkpoint and yaml files to work with onnix script)
