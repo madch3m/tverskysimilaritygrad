@@ -455,7 +455,7 @@ def build_tversky_reduce_interpretable(
     beta: float = 1.0,
     **_
 ):
-    """Build interpretable Tversky reduce backbone."""
+    """Build interpretable Tversky."""
     return TverskyReduceBackbone(
         out_dim=out_dim,
         in_channels=in_channels,

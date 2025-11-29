@@ -1,7 +1,7 @@
 seed: 1337
 
 dataset:
-  name: fruits_360  # Hugging Face dataset: PedroSampaio/fruits-360
+  name: fruits_360  
   params:
     dataset_name: PedroSampaio/fruits-360
     data_dir: ./data
@@ -25,7 +25,7 @@ model:
     name: linear
     params:
       in_dim: 128
-      num_classes: 131  # fruits-360 has 131 classes
+      num_classes: 131  
 
 train:
   epochs: 10
@@ -33,8 +33,8 @@ train:
   weight_decay: 1e-4
   device: cuda
   ckpt_dir: ./checkpoints
-  log_every: 50     # training steps
-  eval_every: 1     # epochs
+  log_every: 50     
+  eval_every: 1     
 
 eval:
   batch_size: 32

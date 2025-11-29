@@ -201,7 +201,7 @@ class SharedTverskyNetwork(nn.Module):
         super().__init__()
         self.layer1 = SharedTverskyLinear(embed_dim,intermediate_dim, feature_key=feature_key,alpha=alpha,beta=beta,gamma=gamma)
         self.layer2 = SharedTverskyLinear(intermediate_dim,embed_dim,feature_key=f"{feature_key}_intermediate", alpha=alpha, beta=beta, gamma=gamma)
-        self.act = F.relu  # Fixed: was F.relu()
+        self.act = F.relu 
         self.dropout = nn.Dropout(dropout)
     
     def forward(self, hidden_states):
