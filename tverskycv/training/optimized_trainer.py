@@ -22,13 +22,35 @@ from torch.utils.data import DataLoader
 
 from torch.utils.data.distributed import DistributedSampler
 
-from torch.cuda.amp import autocast, GradScaler
-
 import time
-
 import os
-
 from typing import Optional, Dict, Any
+
+# Conditional import for mixed precision (requires CUDA)
+try:
+    from torch.cuda.amp import autocast, GradScaler
+    AMP_AVAILABLE = True
+except ImportError:
+    # Fallback for CPU-only systems
+    AMP_AVAILABLE = False
+    # Create dummy context manager for autocast
+    class autocast:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+    # Create dummy GradScaler
+    class GradScaler:
+        def scale(self, loss):
+            return loss
+        def unscale_(self, optimizer):
+            pass
+        def step(self, optimizer):
+            optimizer.step()
+        def update(self):
+            pass
 
 
 
@@ -116,9 +138,15 @@ class OptimizedTrainer:
 
         
 
-        # Mixed precision scaler
-
-        self.scaler = GradScaler()
+        # Mixed precision scaler (only if AMP available)
+        if AMP_AVAILABLE and device.type == 'cuda':
+            self.scaler = GradScaler()
+            self.use_amp = True
+        else:
+            self.scaler = None
+            self.use_amp = False
+            if device.type == 'cpu':
+                print("⚠ Mixed precision (AMP) not available on CPU - using FP32")
 
         
 
@@ -186,36 +214,36 @@ class OptimizedTrainer:
 
             
 
-            # Mixed precision forward pass
-
-            with autocast():
-
+            # Mixed precision forward pass (if available)
+            if self.use_amp:
+                with autocast():
+                    logits = self.model(images)
+                    loss = self.criterion(logits, labels)
+                
+                # Backward pass with gradient scaling
+                self.scaler.scale(loss).backward()
+                
+                # Gradient clipping
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.gradient_clip)
+                
+                # Optimizer step
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                # Standard FP32 training
                 logits = self.model(images)
-
                 loss = self.criterion(logits, labels)
-
+                
+                # Backward pass
+                loss.backward()
+                
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.gradient_clip)
+                
+                # Optimizer step
+                self.optimizer.step()
             
-
-            # Backward pass with gradient scaling
-
-            self.scaler.scale(loss).backward()
-
-            
-
-            # Gradient clipping
-
-            self.scaler.unscale_(self.optimizer)
-
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.gradient_clip)
-
-            
-
-            # Optimizer step
-
-            self.scaler.step(self.optimizer)
-
-            self.scaler.update()
-
             self.scheduler.step()
 
             
@@ -280,10 +308,12 @@ class OptimizedTrainer:
 
             
 
-            with autocast():
-
+            if self.use_amp:
+                with autocast():
+                    logits = self.model(images)
+                    loss = self.criterion(logits, labels)
+            else:
                 logits = self.model(images)
-
                 loss = self.criterion(logits, labels)
 
             
@@ -578,9 +608,13 @@ class DistributedTrainer:
 
         
 
-        # Mixed precision
-
-        self.scaler = GradScaler()
+        # Mixed precision (only if available)
+        if AMP_AVAILABLE:
+            self.scaler = GradScaler()
+            self.use_amp = True
+        else:
+            self.scaler = None
+            self.use_amp = False
 
         
 
@@ -724,19 +758,19 @@ class DistributedTrainer:
 
                 
 
-                with autocast():
-
+                if self.use_amp:
+                    with autocast():
+                        logits = self.model(images)
+                        loss = self.criterion(logits, labels)
+                    
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
                     logits = self.model(images)
-
                     loss = self.criterion(logits, labels)
-
-                
-
-                self.scaler.scale(loss).backward()
-
-                self.scaler.step(self.optimizer)
-
-                self.scaler.update()
+                    loss.backward()
+                    self.optimizer.step()
 
                 scheduler.step()
 
@@ -768,8 +802,10 @@ class DistributedTrainer:
 
                     
 
-                    with autocast():
-
+                    if self.use_amp:
+                        with autocast():
+                            logits = self.model(images)
+                    else:
                         logits = self.model(images)
 
                     
