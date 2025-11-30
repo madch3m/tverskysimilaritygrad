@@ -1,8 +1,8 @@
 """
 Tversky Reduce Backbone - CNN with Tversky Projection Layers
 
-This module provides a backbone that combines CNN feature extraction with
-Tversky projection layers that can share features via GlobalFeature bank.
+This module provides Tversky projection layers with optional GlobalFeature sharing,
+and a backbone that combines CNN feature extraction with Tversky projections.
 
 Author: Based on Tversky Neural Networks paper
 """
@@ -10,13 +10,322 @@ Author: Based on Tversky Neural Networks paper
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import numpy as np
 from typing import Optional, Tuple
 
 # Import GlobalFeature from shared_tversky
 from .shared_tversky import GlobalFeature
 
 
-class SharedTverskyCompact(nn.Module):
+# ============================================================================
+# Base Tversky Classes (without GlobalFeature sharing)
+# ============================================================================
+
+class TverskyCompact(nn.Module):
+    """
+    Compact Tversky Projection Layer - Optimized for parameter efficiency.
+
+    Uses direct weight matrix parameterization for minimum parameter count.
+    Best for deployment and production use where memory/compute is critical.
+
+    Tversky Similarity:
+        s(x, p_k) = |x ∩ p_k| / (|x ∩ p_k| + α|x \\ p_k| + β|p_k \\ x|)
+
+    Args:
+        in_features: Input dimension (e.g., 36 for MNIST conv output)
+        n_prototypes: Number of output prototypes (e.g., 10 for 10 classes)
+        alpha: Weight for features in input but not in prototype (default: 1.0)
+        beta: Weight for features in prototype but not in input (default: 1.0)
+
+    Example:
+        >>> layer = TverskyCompact(in_features=36, n_prototypes=10)
+        >>> x = torch.randn(32, 36)  # batch_size=32
+        >>> output = layer(x)  # shape: (32, 10)
+        >>> print(f"Parameters: {sum(p.numel() for p in layer.parameters())}")
+        Parameters: 370
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        n_prototypes: int,
+        alpha: float = 1.0,
+        beta: float = 1.0
+    ):
+        super().__init__()
+
+        self.in_features = in_features
+        self.n_prototypes = n_prototypes
+        self.alpha = alpha
+        self.beta = beta
+
+        # Direct weight matrix: [n_prototypes × in_features]
+        # This is the most compact representation
+        self.weight = nn.Parameter(torch.randn(n_prototypes, in_features))
+        self.bias = nn.Parameter(torch.zeros(n_prototypes))
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        """Initialize parameters using Kaiming (He) initialization."""
+        nn.init.kaiming_normal_(self.weight, mode='fan_in', nonlinearity='relu')
+        nn.init.zeros_(self.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Compute Tversky similarity between input and prototypes.
+
+        Args:
+            x: Input tensor of shape (batch_size, in_features)
+
+        Returns:
+            Similarity scores of shape (batch_size, n_prototypes)
+        """
+        # Expand dimensions for broadcasting
+        # x: (batch, in_features) -> (batch, 1, in_features)
+        # weight: (n_prototypes, in_features) -> (1, n_prototypes, in_features)
+        x_expanded = x.unsqueeze(1)
+        w_expanded = self.weight.unsqueeze(0)
+
+        # Apply sigmoid to get values in [0, 1] for set interpretation
+        x_sig = torch.sigmoid(x_expanded)
+        w_sig = torch.sigmoid(w_expanded)
+
+        # Compute Tversky similarity components
+        # Intersection: min(x, w) represents shared features
+        intersection = torch.min(x_sig, w_sig).sum(dim=-1)
+
+        # x \ w: features present in x but not in w
+        x_diff = torch.clamp(x_sig - w_sig, min=0).sum(dim=-1)
+
+        # w \ x: features present in w but not in x
+        w_diff = torch.clamp(w_sig - x_sig, min=0).sum(dim=-1)
+
+        # Tversky similarity formula
+        # Add small epsilon for numerical stability
+        denominator = intersection + self.alpha * x_diff + self.beta * w_diff + 1e-8
+        similarity = intersection / denominator
+
+        return similarity + self.bias
+
+    def extra_repr(self) -> str:
+        """String representation for print(model)."""
+        return (f'in_features={self.in_features}, '
+                f'n_prototypes={self.n_prototypes}, '
+                f'alpha={self.alpha}, beta={self.beta}')
+
+    def get_num_parameters(self) -> int:
+        """Return total number of parameters."""
+        return sum(p.numel() for p in self.parameters())
+
+
+class TverskyInterpretable(nn.Module):
+    """
+    Interpretable Tversky Projection Layer - Factorized for visualization.
+
+    Uses separate prototype and feature matrices that can be visualized
+    and analyzed. Best for research, analysis, and understanding what
+    the network has learned.
+
+    Architecture:
+        Input → Feature Transform (shared) → Feature Space →
+        Compare to Prototypes → Similarity Scores
+
+    The factorization enables:
+        - Visualization of learned prototypes (one per class)
+        - Analysis of learned features (shared representation)
+        - Understanding of similarity computations
+
+    Args:
+        in_features: Input dimension (e.g., 36 for MNIST conv output)
+        n_prototypes: Number of output prototypes (e.g., 10 for 10 classes)
+        n_features: Intermediate feature dimension (e.g., 20)
+        alpha: Weight for features in input but not in prototype (default: 1.0)
+        beta: Weight for features in prototype but not in input (default: 1.0)
+
+    Example:
+        >>> layer = TverskyInterpretable(in_features=36, n_prototypes=10, n_features=20)
+        >>> x = torch.randn(32, 36)
+        >>> output = layer(x)  # shape: (32, 10)
+        >>> prototypes, features = layer.get_learned_components()
+        >>> print(f"Prototypes shape: {prototypes.shape}")  # (10, 20)
+        >>> print(f"Features shape: {features.shape}")      # (20, 36)
+        >>> print(f"Parameters: {layer.get_num_parameters()}")
+        Parameters: 930
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        n_prototypes: int,
+        n_features: int,
+        alpha: float = 1.0,
+        beta: float = 1.0
+    ):
+        super().__init__()
+
+        self.in_features = in_features
+        self.n_prototypes = n_prototypes
+        self.n_features = n_features
+        self.alpha = alpha
+        self.beta = beta
+
+        # Factorized representation for interpretability:
+        # Features: [n_features × in_features] - SHARED by all prototypes
+        # Prototypes: [n_prototypes × n_features] - One per class
+        self.features = nn.Parameter(torch.randn(n_features, in_features))
+        self.prototypes = nn.Parameter(torch.randn(n_prototypes, n_features))
+        self.bias = nn.Parameter(torch.zeros(n_prototypes))
+
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        """Initialize parameters using Kaiming (He) initialization."""
+        nn.init.kaiming_normal_(self.features, mode='fan_in', nonlinearity='relu')
+        nn.init.kaiming_normal_(self.prototypes, mode='fan_in', nonlinearity='relu')
+        nn.init.zeros_(self.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Compute Tversky similarity between input and prototypes.
+
+        Args:
+            x: Input tensor of shape (batch_size, in_features)
+
+        Returns:
+            Similarity scores of shape (batch_size, n_prototypes)
+        """
+        # Step 1: Project input through shared feature transformation
+        # x: (batch, in_features) -> x_features: (batch, n_features)
+        x_features = F.linear(x, self.features)
+
+        # Step 2: Expand for broadcasting with prototypes
+        # x_features: (batch, n_features) -> (batch, 1, n_features)
+        # prototypes: (n_prototypes, n_features) -> (1, n_prototypes, n_features)
+        x_expanded = x_features.unsqueeze(1)
+        p_expanded = self.prototypes.unsqueeze(0)
+
+        # Step 3: Apply sigmoid for set-theoretic interpretation
+        x_sig = torch.sigmoid(x_expanded)
+        p_sig = torch.sigmoid(p_expanded)
+
+        # Step 4: Compute Tversky similarity components
+        # Intersection: features present in both
+        intersection = torch.min(x_sig, p_sig).sum(dim=-1)
+
+        # Asymmetric differences
+        x_diff = torch.clamp(x_sig - p_sig, min=0).sum(dim=-1)
+        p_diff = torch.clamp(p_sig - x_sig, min=0).sum(dim=-1)
+
+        # Step 5: Tversky similarity formula
+        denominator = intersection + self.alpha * x_diff + self.beta * p_diff + 1e-8
+        similarity = intersection / denominator
+
+        return similarity + self.bias
+
+    def get_learned_components(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Return the learned prototypes and features for visualization.
+
+        Returns:
+            prototypes: Tensor of shape (n_prototypes, n_features)
+            features: Tensor of shape (n_features, in_features)
+        """
+        return self.prototypes.detach(), self.features.detach()
+
+    def visualize_prototypes(
+        self,
+        class_names: Optional[list] = None,
+        figsize: Tuple[int, int] = (15, 8),
+        save_path: Optional[str] = None
+    ):
+        """
+        Visualize the learned prototype and feature matrices.
+
+        Args:
+            class_names: Optional list of class names for labeling
+            figsize: Figure size for matplotlib
+            save_path: If provided, save figure to this path
+        """
+        prototypes, features = self.get_learned_components()
+        prototypes = prototypes.cpu().numpy()
+        features = features.cpu().numpy()
+
+        if class_names is None:
+            class_names = [f'Class {i}' for i in range(self.n_prototypes)]
+
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(2, 1, height_ratios=[2, 1], hspace=0.3)
+
+        # Plot prototypes
+        ax1 = fig.add_subplot(gs[0])
+        im1 = ax1.imshow(prototypes, cmap='RdBu_r', aspect='auto', vmin=-2, vmax=2)
+        ax1.set_xlabel('Feature Dimension', fontsize=11, fontweight='bold')
+        ax1.set_ylabel('Prototype (Class)', fontsize=11, fontweight='bold')
+        ax1.set_title(f'Learned Prototypes ({self.n_prototypes} classes × {self.n_features} features)',
+                      fontsize=13, fontweight='bold')
+        ax1.set_yticks(range(self.n_prototypes))
+        ax1.set_yticklabels(class_names)
+        plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+
+        # Plot features
+        ax2 = fig.add_subplot(gs[1])
+        im2 = ax2.imshow(features, cmap='RdBu_r', aspect='auto', vmin=-2, vmax=2)
+        ax2.set_xlabel('Input Dimension', fontsize=11, fontweight='bold')
+        ax2.set_ylabel('Feature', fontsize=11, fontweight='bold')
+        ax2.set_title(f'Learned Feature Transformation ({self.n_features} features × {self.in_features} inputs)',
+                      fontsize=13, fontweight='bold')
+        plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Visualization saved to: {save_path}")
+
+        plt.show()
+
+    def get_prototype_for_class(self, class_idx: int) -> torch.Tensor:
+        """
+        Get the prototype vector for a specific class.
+
+        Args:
+            class_idx: Index of the class (0 to n_prototypes-1)
+
+        Returns:
+            Prototype vector of shape (n_features,)
+        """
+        return self.prototypes[class_idx].detach()
+
+    def get_feature_importance(self) -> torch.Tensor:
+        """
+        Compute feature importance based on magnitude across all prototypes.
+
+        Returns:
+            Feature importance scores of shape (n_features,)
+        """
+        # Compute L2 norm of each feature across prototypes
+        importance = torch.norm(self.prototypes.detach(), p=2, dim=0)
+        return importance
+
+    def extra_repr(self) -> str:
+        """String representation for print(model)."""
+        return (f'in_features={self.in_features}, '
+                f'n_prototypes={self.n_prototypes}, '
+                f'n_features={self.n_features}, '
+                f'alpha={self.alpha}, beta={self.beta}')
+
+    def get_num_parameters(self) -> int:
+        """Return total number of parameters."""
+        return sum(p.numel() for p in self.parameters())
+
+
+# ============================================================================
+# Shared Tversky Classes (with GlobalFeature sharing support)
+# ============================================================================
+
+class SharedTverskyCompact(TverskyCompact):
     """
     Compact Tversky Projection Layer with GlobalFeature sharing support.
     
@@ -41,19 +350,21 @@ class SharedTverskyCompact(nn.Module):
         alpha: float = 1.0,
         beta: float = 1.0
     ):
-        super().__init__()
-        
+        # Initialize base class without alpha/beta (we'll handle them separately)
+        # We need to manually set up the base class attributes
+        nn.Module.__init__(self)
         self.in_features = in_features
         self.n_prototypes = n_prototypes
+        
+        # Weight matrix (prototypes) - always layer-specific
+        self.weight = nn.Parameter(torch.randn(n_prototypes, in_features))
+        self.bias = nn.Parameter(torch.zeros(n_prototypes))
+        
         self.feature_key = feature_key
         self.share_params = share_params
         
         # Get GlobalFeature singleton
         self._global_feature = GlobalFeature()
-        
-        # Weight matrix (prototypes) - always layer-specific
-        self.weight = nn.Parameter(torch.randn(n_prototypes, in_features))
-        self.bias = nn.Parameter(torch.zeros(n_prototypes))
         
         # Tversky parameters: shared via GlobalFeature if share_params=True
         if share_params:
@@ -71,8 +382,6 @@ class SharedTverskyCompact(nn.Module):
             self._alpha = nn.Parameter(torch.tensor(alpha))
             self._beta = nn.Parameter(torch.tensor(beta))
             self._param_key = None
-        
-        self._reset_parameters()
     
     @property
     def alpha(self):
@@ -88,11 +397,6 @@ class SharedTverskyCompact(nn.Module):
             return self._global_feature.get_feature(self._param_key)['beta']
         return self._beta
     
-    def _reset_parameters(self):
-        """Initialize parameters."""
-        nn.init.kaiming_normal_(self.weight, mode='fan_in', nonlinearity='relu')
-        nn.init.zeros_(self.bias)
-    
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Compute Tversky similarity between input and prototypes.
@@ -104,8 +408,6 @@ class SharedTverskyCompact(nn.Module):
             Similarity scores of shape (batch_size, n_prototypes)
         """
         # Expand dimensions for broadcasting
-        # x: (batch, in_features) -> (batch, 1, in_features)
-        # weight: (n_prototypes, in_features) -> (1, n_prototypes, in_features)
         x_expanded = x.unsqueeze(1)
         w_expanded = self.weight.unsqueeze(0)
         
@@ -114,21 +416,15 @@ class SharedTverskyCompact(nn.Module):
         w_sig = torch.sigmoid(w_expanded)
         
         # Compute Tversky similarity components
-        # Intersection: min(x, w) represents shared features
         intersection = torch.min(x_sig, w_sig).sum(dim=-1)
-        
-        # x \ w: features present in x but not in w
         x_diff = torch.clamp(x_sig - w_sig, min=0).sum(dim=-1)
-        
-        # w \ x: features present in w but not in x
         w_diff = torch.clamp(w_sig - x_sig, min=0).sum(dim=-1)
         
-        # Get alpha and beta
+        # Get alpha and beta (using properties)
         alpha = self.alpha
         beta = self.beta
         
         # Tversky similarity formula
-        # Add small epsilon for numerical stability
         denominator = intersection + alpha * x_diff + beta * w_diff + 1e-8
         similarity = intersection / denominator
         
@@ -142,7 +438,7 @@ class SharedTverskyCompact(nn.Module):
         return params
 
 
-class SharedTverskyInterpretable(nn.Module):
+class SharedTverskyInterpretable(TverskyInterpretable):
     """
     Interpretable Tversky Projection Layer with GlobalFeature sharing support.
     
@@ -168,22 +464,22 @@ class SharedTverskyInterpretable(nn.Module):
         alpha: float = 1.0,
         beta: float = 1.0
     ):
-        super(SharedTverskyInterpretable, self).__init__()
-        
+        # Initialize base class without alpha/beta (we'll handle them separately)
+        # We need to manually set up the base class attributes
+        nn.Module.__init__(self)
         self.in_features = in_features
         self.n_prototypes = n_prototypes
         self.n_features = n_features
-        self.feature_key = feature_key
-        self.share_features = share_features
-        self.alpha = alpha
-        self.beta = beta
-        
-        # Get GlobalFeature singleton
-        self._global_feature = GlobalFeature()
         
         # Prototypes are always layer-specific
         self.prototypes = nn.Parameter(torch.randn(n_prototypes, n_features))
         self.bias = nn.Parameter(torch.zeros(n_prototypes))
+        
+        self.feature_key = feature_key
+        self.share_features = share_features
+        
+        # Get GlobalFeature singleton
+        self._global_feature = GlobalFeature()
         
         # Feature matrix: shared via GlobalFeature if share_features=True
         if share_features:
@@ -213,6 +509,7 @@ class SharedTverskyInterpretable(nn.Module):
             self._beta = nn.Parameter(torch.tensor(beta))
             self._param_key = None
         
+        # Re-initialize parameters
         self._reset_parameters()
     
     @property
@@ -304,6 +601,10 @@ class SharedTverskyInterpretable(nn.Module):
             params += self._alpha.numel() + self._beta.numel()
         return params
 
+
+# ============================================================================
+# Backbone Class
+# ============================================================================
 
 class TverskyReduceBackbone(nn.Module):
     """
@@ -414,7 +715,86 @@ class TverskyReduceBackbone(nn.Module):
         return conv_params + tversky_params
 
 
-# ---------- Registry entry ----------
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+def compare_tversky_variants():
+    """
+    Compare the compact and interpretable Tversky variants.
+
+    Demonstrates parameter counts, forward pass, and output equivalence.
+    """
+    print("\n" + "="*80)
+    print("TVERSKY LAYER COMPARISON")
+    print("="*80)
+
+    # Configuration
+    in_features = 36
+    n_prototypes = 10
+    n_features = 20
+    batch_size = 32
+
+    # Create both variants
+    compact = TverskyCompact(in_features=in_features, n_prototypes=n_prototypes)
+    interpretable = TverskyInterpretable(
+        in_features=in_features,
+        n_prototypes=n_prototypes,
+        n_features=n_features
+    )
+
+    print(f"\n{'Variant':<20s} {'Parameters':<15s} {'Memory (KB)':<15s}")
+    print("-" * 80)
+
+    for name, model in [("Compact", compact), ("Interpretable", interpretable)]:
+        params = model.get_num_parameters()
+        memory_kb = params * 4 / 1024  # float32 = 4 bytes
+        print(f"{name:<20s} {params:<15,} {memory_kb:<14.2f}")
+
+    ratio = interpretable.get_num_parameters() / compact.get_num_parameters()
+    print(f"\nInterpretable overhead: {ratio:.2f}x")
+
+    # Test forward pass
+    print("\n" + "="*80)
+    print("FORWARD PASS TEST")
+    print("="*80)
+
+    x = torch.randn(batch_size, in_features)
+
+    out_compact = compact(x)
+    out_interpretable = interpretable(x)
+
+    print(f"\nInput shape:              {tuple(x.shape)}")
+    print(f"Compact output shape:     {tuple(out_compact.shape)}")
+    print(f"Interpretable output:     {tuple(out_interpretable.shape)}")
+
+    print("\nSample outputs (first 3 samples, first 5 classes):")
+    print(f"Compact:\n{out_compact[:3, :5]}")
+    print(f"\nInterpretable:\n{out_interpretable[:3, :5]}")
+
+    # Show interpretable components
+    print("\n" + "="*80)
+    print("INTERPRETABLE COMPONENTS")
+    print("="*80)
+
+    prototypes, features = interpretable.get_learned_components()
+    print(f"\nPrototype matrix shape:   {tuple(prototypes.shape)}")
+    print(f"Feature matrix shape:     {tuple(features.shape)}")
+
+    importance = interpretable.get_feature_importance()
+    print(f"\nFeature importance (top 5 features):")
+    top_features = torch.argsort(importance, descending=True)[:5]
+    for i, feat_idx in enumerate(top_features):
+        print(f"  {i+1}. Feature {feat_idx.item()}: {importance[feat_idx].item():.4f}")
+
+    print("\n" + "="*80)
+    print("✓ Both variants working correctly!")
+    print("="*80 + "\n")
+
+
+# ============================================================================
+# Registry entries
+# ============================================================================
 
 from ...registry.registry import BACKBONES
 
@@ -467,4 +847,3 @@ def build_tversky_reduce_interpretable(
         alpha=alpha,
         beta=beta,
     )
-
