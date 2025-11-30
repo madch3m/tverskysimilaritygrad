@@ -4,6 +4,10 @@ from .optimizers import build_optimizer
 from .schedulers import build_scheduler
 from .utils import set_seed, save_checkpoint, load_checkpoint, resolve_device
 
+# Optimized training utilities
+from .optimized_trainer import OptimizedTrainer, DistributedTrainer, create_optimized_dataloaders, get_optimal_batch_size
+from .multi_gpu_launcher import launch_distributed_training
+
 __all__ = [
     "train_one_epoch",
     "evaluate",
@@ -16,4 +20,10 @@ __all__ = [
     "save_checkpoint",
     "load_checkpoint",
     "resolve_device",
+    # Optimized training
+    "OptimizedTrainer",
+    "DistributedTrainer",
+    "create_optimized_dataloaders",
+    "get_optimal_batch_size",
+    "launch_distributed_training",
 ]

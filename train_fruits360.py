@@ -15,8 +15,19 @@ from typing import Optional, Dict, Any, Tuple
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+# Optional TensorBoard import
+try:
+    from torch.utils.tensorboard import SummaryWriter
+    TENSORBOARD_AVAILABLE = True
+except ImportError:
+    try:
+        from tensorboard import SummaryWriter
+        TENSORBOARD_AVAILABLE = True
+    except ImportError:
+        TENSORBOARD_AVAILABLE = False
+        SummaryWriter = None  # Will be handled in TrainingLogger
 
 from tverskycv.registry import BACKBONES, HEADS, DATASETS
 from tverskycv.models.wrappers.classifiers import ImageClassifier
@@ -34,9 +45,13 @@ class TrainingLogger:
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
-        self.use_tensorboard = use_tensorboard
-        if use_tensorboard:
+        self.use_tensorboard = use_tensorboard and TENSORBOARD_AVAILABLE
+        if self.use_tensorboard and SummaryWriter is not None:
             self.writer = SummaryWriter(log_dir=str(self.log_dir / 'tensorboard'))
+        else:
+            self.writer = None
+            if use_tensorboard and not TENSORBOARD_AVAILABLE:
+                print("⚠ TensorBoard not available, logging to file only")
         
         self.log_file_path = self.log_dir / log_file
         self.metrics_history = {
@@ -67,7 +82,7 @@ class TrainingLogger:
         self.metrics_history['val_acc'].append(val_acc)
         self.metrics_history['learning_rate'].append(lr)
         
-        if self.use_tensorboard:
+        if self.use_tensorboard and self.writer is not None:
             self.writer.add_scalar('Loss/Train', train_loss, epoch)
             self.writer.add_scalar('Loss/Val', val_loss, epoch)
             self.writer.add_scalar('Accuracy/Train', train_acc, epoch)
@@ -77,7 +92,7 @@ class TrainingLogger:
     def log_batch(self, epoch: int, batch_idx: int, total_batches: int, 
                   loss: float, acc: float, lr: Optional[float] = None):
         """Log batch-level metrics."""
-        if self.use_tensorboard:
+        if self.use_tensorboard and self.writer is not None:
             global_step = epoch * total_batches + batch_idx
             self.writer.add_scalar('Loss/Train_Batch', loss, global_step)
             self.writer.add_scalar('Accuracy/Train_Batch', acc, global_step)
@@ -86,7 +101,7 @@ class TrainingLogger:
     
     def log_model_weights(self, model: nn.Module, epoch: int):
         """Log model weight histograms."""
-        if self.use_tensorboard:
+        if self.use_tensorboard and self.writer is not None:
             for name, param in model.named_parameters():
                 self.writer.add_histogram(f'Weights/{name}', param.cpu(), epoch)
     
@@ -99,7 +114,7 @@ class TrainingLogger:
     
     def close(self):
         """Close logger and flush all logs."""
-        if self.use_tensorboard:
+        if self.use_tensorboard and self.writer is not None:
             self.writer.close()
         self.log("Training logger closed")
 
