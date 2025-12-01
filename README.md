@@ -1,51 +1,54 @@
-# 🧠 TVERSKY-SIMILARITY-GRAD  
+# 🧠 TVERSKY-SIMILARITY-GRAD
+
 _Modular, scalable computer-vision framework for experimenting with Tversky-based similarity models_
 
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-orange.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ## Table of Contents
+
 - [Overview](#overview)
-- [Motivation](#motivation)
-- [Key Concepts](#key-concepts)
-  - [Backbones](#backbones)
-  - [Projection Heads](#projection-heads)
-  - [Tversky Projection Layer](#tversky-projection-layer)
-- [Architecture](#architecture)
-  - [Directory Layout](#directory-layout)
-  - [Design Principles](#design-principles)
+- [Key Features](#key-features)
 - [Installation](#installation)
-- [Usage](#usage)
-  - [Training](#training)
-  - [Evaluating](#evaluating)
-  - [Swapping Models via Config](#swapping-models-via-config)
-  - [Jupyter Notebook](#jupyter-notebook)
+- [Quick Start](#quick-start)
+- [Usage Methods](#usage-methods)
+  - [Command-Line Interface (CLI)](#command-line-interface-cli)
+  - [Python API](#python-api)
+  - [Jupyter Notebooks](#jupyter-notebooks)
+  - [Multi-GPU Training](#multi-gpu-training)
+- [Key Features Explained](#key-features-explained)
 - [Configuration](#configuration)
-- [Testing](#testing)
-- [Development Workflow](#development-workflow)
-- [Roadmap](#roadmap)
-- [References](#references)
+- [Model Architectures](#model-architectures)
+- [Advanced Features](#advanced-features)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+- [References & Resources](#references--resources)
 - [License](#license)
 
 ---
 
 ## Overview
-**TVERSKY-SIMILARITY-GRAD** is a modular and testable deep-learning codebase supporting research on **Tversky Projection Layers**—a newly proposed neural architecture for **psychologically plausible similarity** (Doumbouya et al., 2025).  
 
-This repository enables:
-✅ Plug-and-play evaluation of different projection heads  
-✅ Simple model benchmarking on MNIST (extensible to other datasets)  
-✅ Clean separation between **architecture**, **training**, and **research**  
-✅ Reproducible, testable experimentation  
+**TVERSKY-SIMILARITY-GRAD** is a modular and testable deep-learning codebase supporting research on **Tversky Projection Layers**—a newly proposed neural architecture for **psychologically plausible similarity** (Doumbouya et al., 2025).
 
-Your team can implement the Tversky layer internally while others focus on data, training, or analysis.
+This framework enables:
+- ✅ Plug-and-play evaluation of different projection heads
+- ✅ Simple model benchmarking on MNIST, Fruits-360, and other datasets
+- ✅ Clean separation between **architecture**, **training**, and **research**
+- ✅ Reproducible, testable experimentation
+- ✅ Transfer learning with progressive unfreezing
+- ✅ Mixed precision training (AMP)
+- ✅ TensorBoard logging with Tversky parameter tracking
 
----
+### What is Tversky Similarity?
 
-## Motivation
-Standard deep learning layers (e.g., dot-product linear layers) model **geometric similarity**, which fails to capture key properties of human perception—especially asymmetry (“the son resembles the father” ≠ “the father resembles the son”).
+Standard deep learning layers (e.g., dot-product linear layers) model **geometric similarity**, which fails to capture key properties of human perception—especially asymmetry ("the son resembles the father" ≠ "the father resembles the son").
 
 The **Tversky contrast model** defines similarity in terms of:
-- Common features
-- Distinctive features
-- Weighted asymmetry
+- **Common features** (shared characteristics)
+- **Distinctive features** (unique to each object)
+- **Weighted asymmetry** (α and β parameters)
 
 This repository provides the scaffolding to:
 - Build CV pipelines using Tversky similarity
@@ -54,184 +57,103 @@ This repository provides the scaffolding to:
 
 ---
 
-## Key Concepts
+## Key Features
 
-### Backbones
-Feature extractors such as:
-- Simple CNN
-- ResNet variations
-- Vision Transformers (future)
-
-Backbones output a feature vector of dimension `D`.
-
-### Projection Heads
-Heads take `[B, D] → [B, C]` and allow model comparison via simple configuration.
-
-Built-in:
-- `LinearHead`
-- `TverskyProjectionHead` (scaffold)
-
-All heads implement:
-```python
-IProjectionHead.forward(x)
-IProjectionHead.output_dim()
-```
-
-### Tversky Projection Layer
-Implements a differentiable version of:
-```
-S(a,b) = θ·f(A∩B) – α·f(A–B) – β·f(B–A)
-```
-
----
-
-## Architecture
-
-### Directory Layout
-```
-TVERSKY-SIMILARITY-GRAD/
-    tverskycv/
-        configs/              # YAML configs
-            mnist.yaml
-            models/
-            simple_cnn.yaml
-            resnet18.yaml
-            heads/
-            linear.yaml
-            tversky.yaml
-        data/
-            datamodules.py      # MNIST loaders
-            transforms.py
-        models/
-            backbones/
-            simple_cnn.py
-            resnet.py
-            heads/
-            base.py
-            linear_head.py
-            tversky_head.py
-            wrappers/
-            classifier.py
-        registry/
-            registry.py
-        training/
-            engine.py
-            metrics.py
-            utils.py
-        cli/
-            train.py
-            eval.py
-        notebooks/
-            TverskySimilarity.ipynb
-        scripts/
-            export_onnx.py
-    tests/
-        test_heads.py
-        test_backbones.py
-        test_wrapper.py
-        test_datamodule.py
-    README.md
-```
-
----
-
-### Design Principles
-
-✅ **Composable**  
-Backbones and heads can be swapped without touching training code.
-
-✅ **Testable**  
-Unit tests isolate:
-- data loading
-- backbones
-- heads
-- wrapper behavior
-
-✅ **Minimal Notebook Logic**  
-Notebooks import the library; all logic stays in the codebase.
-
-✅ **Config-Driven**  
-Model selection uses `.yaml` config files.
-
-✅ **Extendable**  
-Researchers can use the registry to add new heads/datasets.
+- 🚀 **Config-Driven Architecture**: Swap models via YAML configs, no code changes needed
+- 🎯 **Transfer Learning**: ImageNet pretrained weights, progressive unfreezing strategies
+- ⚡ **Optimized Training**: Mixed precision (AMP), automatic batch size selection, gradient clipping
+- 📊 **TensorBoard Integration**: Automatic logging of metrics, weights, gradients, and Tversky parameters (alpha/beta)
+- 🔄 **Parameter Sharing**: GlobalFeature bank for efficient parameter reduction
+- 🧩 **Modular Design**: Composable backbones and heads via registry system
+- 📓 **Notebook Support**: Ready-to-use Colab notebooks with full examples
+- 🖥️ **Multi-GPU Support**: Distributed Data Parallel (DDP) training
+- 🧪 **Testable**: Comprehensive unit tests for all components
 
 ---
 
 ## Installation
 
+### Prerequisites
+
+- Python 3.8 or higher
+- PyTorch 2.0+ (see [PyTorch installation guide](https://pytorch.org/get-started/locally/))
+- CUDA-capable GPU (optional, but recommended for training)
+
+### Step 1: Clone the Repository
+
 ```bash
-git clone <your-repo-url>
-cd TVERSKY-SIMILARITY-GRAD
+git clone https://github.com/YOUR_USERNAME/tverskysimilaritygrad.git
+cd tversky-similarity-grad
+```
+
+### Step 2: Create Virtual Environment (Recommended)
+
+```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+# On macOS/Linux:
+source .venv/bin/activate
+# On Windows:
+# .venv\Scripts\activate
+```
+
+### Step 3: Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
+### Optional Dependencies
+
+For enhanced functionality:
+
+```bash
+# TensorBoard for visualization
+pip install tensorboard
+
+# Jupyter for notebooks
+pip install jupyter notebook
+
+# Additional datasets
+pip install datasets transformers
+```
+
 ---
 
-## Usage
+## Quick Start
 
-### Training
+### Example 1: Train on MNIST (5 minutes)
 
-Basic:
 ```bash
+# Activate environment
+source .venv/bin/activate
+
+# Train with default config
 python -m tverskycv.cli.train --config tverskycv/configs/mnist.yaml
 ```
 
-Trained model checkpoints automatically save to:
-```
-./checkpoints/
-```
+Trained model checkpoints automatically save to `./checkpoints/`
 
-### Evaluating
+### Example 2: Train on Fruits-360 (CPU-optimized)
+
 ```bash
-python -m tverskycv.cli.eval --config tverskycv/configs/mnist.yaml --ckpt path/to/model.pt
+# Use CPU-optimized config
+python train_fruits360.py --config tverskycv/configs/fruits_cpu.yaml
 ```
 
----
+### Example 3: Quick Test Run
 
-### Swapping Models via Config
-Edit `tverskycv/configs/mnist.yaml`:
-
-```yaml
-model:
-  backbone:
-    name: simple_cnn
-  head:
-    name: tversky
-```
-
-No training code change needed.
-
----
-
-### Jupyter Notebook
-Example in:
-
-```
-notebooks/TverskySimilarity.ipynb
-```
-
-Usage:
-```python
-from tverskycv.cli.train import main
-main()
-```
-
----
-
-## Configuration
-
-Configs are YAML. Example:
-
-```yaml
+```bash
+# Create a minimal test config
+cat > test_config.yaml << EOF
 seed: 1337
-
 dataset:
   name: mnist
   params:
     data_dir: ./data
-    batch_size: 256
-
+    batch_size: 64
 model:
   backbone:
     name: simple_cnn
@@ -242,75 +164,778 @@ model:
     params:
       in_dim: 128
       num_classes: 10
+train:
+  epochs: 3
+  lr: 1e-3
+  device: cuda  # or "cpu"
+EOF
+
+# Run training
+python -m tverskycv.cli.train --config test_config.yaml
+```
+
+---
+
+## Usage Methods
+
+### Command-Line Interface (CLI)
+
+The CLI is the simplest way to train models using YAML configuration files.
+
+#### Basic Training
+
+```bash
+python -m tverskycv.cli.train --config tverskycv/configs/mnist.yaml
+```
+
+#### Evaluation
+
+```bash
+python -m tverskycv.cli.eval \
+    --config tverskycv/configs/mnist.yaml \
+    --ckpt checkpoints/best_model.pt
+```
+
+#### Training Scripts
+
+For more advanced training with logging and TensorBoard:
+
+```bash
+# Fruits-360 training with enhanced logging
+python train_fruits360.py --config tverskycv/configs/fruits.yaml
+
+# Optimized training with transfer learning
+python train_fruits360_optimized.py --config fruits360_optimized_config.yaml
+```
+
+#### CLI Options
+
+```bash
+# Resume from checkpoint
+python train_fruits360.py \
+    --config tverskycv/configs/fruits.yaml \
+    --ckpt checkpoints/latest.pt
+
+# Custom log directory
+python train_fruits360.py \
+    --config tverskycv/configs/fruits.yaml \
+    --log-dir ./logs/my_experiment
+
+# Disable TensorBoard
+python train_fruits360.py \
+    --config tverskycv/configs/fruits.yaml \
+    --no-tensorboard
+```
+
+### Python API
+
+For programmatic control and custom training loops, use the Python API.
+
+#### Basic Training with OptimizedTrainer
+
+```python
+import torch
+from torch.utils.data import DataLoader
+from tverskycv.training import OptimizedTrainer, create_optimized_dataloaders
+from tverskycv.models.wrappers.classifiers import ImageClassifier
+from tverskycv.registry import BACKBONES, HEADS
+
+# Create model
+backbone = BACKBONES.get('resnet18')(out_dim=128, pretrained=True)
+head = HEADS.get('linear')(in_dim=128, num_classes=10)
+model = ImageClassifier(backbone, head)
+
+# Create data loaders
+train_loader, val_loader = create_optimized_dataloaders(
+    train_dataset, val_dataset
+)
+
+# Initialize trainer
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+trainer = OptimizedTrainer(
+    model=model,
+    device=device,
+    num_epochs=10,
+    learning_rate=0.001,
+    checkpoint_dir='checkpoints',
+    use_tensorboard=True  # Default: True
+)
+
+# Train
+results = trainer.train(train_loader, val_loader)
+print(f"Best validation accuracy: {results['best_val_acc']:.4f}")
+```
+
+#### Transfer Learning with Progressive Unfreezing
+
+```python
+from tverskycv.training import OptimizedTrainer
+
+# Define progressive unfreezing schedule
+schedule = {
+    0: 0.0,      # Epochs 0-4: Freeze all backbone (train head only)
+    5: 0.33,     # Epochs 5-9: Unfreeze top 33% of backbone
+    10: 0.66,    # Epochs 10-14: Unfreeze top 66% of backbone
+    15: 1.0      # Epochs 15+: Unfreeze all layers
+}
+
+trainer = OptimizedTrainer(
+    model=model,
+    device=device,
+    num_epochs=30,
+    progressive_unfreezing=schedule,  # Enable progressive unfreezing
+    checkpoint_dir='checkpoints'
+)
+
+results = trainer.train(train_loader, val_loader)
+```
+
+#### Static Backbone Freezing
+
+```python
+trainer = OptimizedTrainer(
+    model=model,
+    device=device,
+    num_epochs=10,
+    freeze_backbone=True,  # Freeze backbone for entire training
+    checkpoint_dir='checkpoints'
+)
+```
+
+#### Manual Transfer Learning Control
+
+```python
+from tverskycv.training import (
+    freeze_backbone,
+    get_trainable_params,
+    ProgressiveUnfreezing
+)
+
+# Freeze backbone manually
+freeze_backbone(model, freeze=True)
+
+# Check trainable parameters
+trainable = get_trainable_params(model)
+total = get_total_params(model)
+print(f"Trainable: {trainable:,} / {total:,}")
+
+# Use ProgressiveUnfreezing manager
+unfreezer = ProgressiveUnfreezing(model, schedule)
+for epoch in range(num_epochs):
+    ratio = unfreezer.unfreeze_for_epoch(epoch)
+    info = unfreezer.get_trainable_info()
+    print(f"Epoch {epoch}: {info['trainable']:,} trainable params")
+```
+
+### Jupyter Notebooks
+
+Interactive notebooks are available for experimentation and learning.
+
+#### Available Notebooks
+
+1. **`Classification_Colab.ipynb`**: Complete Fruits-360 classification example
+   - Transfer learning with pretrained ResNet18
+   - TverskyReduceBackbone with parameter sharing
+   - TensorBoard integration
+   - Alpha/beta parameter tracking
+   - Model comparison and visualization
+
+2. **`TverskySimilarity.ipynb`**: Tversky similarity concepts and examples
+
+3. **`TverskyGPT_Colab.ipynb`**: Tversky-based GPT model for NLP
+
+#### Using in Google Colab
+
+1. Open the notebook in Colab
+2. Run the setup cell to clone the repository
+3. Follow the cells sequentially
+4. All dependencies are installed automatically
+
+#### Using Locally
+
+```bash
+# Start Jupyter
+jupyter notebook
+
+# Or use JupyterLab
+jupyter lab
+
+# Navigate to tverskycv/notebooks/ and open the desired notebook
+```
+
+### Multi-GPU Training
+
+For faster training on multiple GPUs, use Distributed Data Parallel (DDP).
+
+#### Single GPU (OptimizedTrainer)
+
+```python
+from tverskycv.training import OptimizedTrainer
+
+trainer = OptimizedTrainer(
+    model=model,
+    device=torch.device('cuda:0'),
+    num_epochs=10
+)
+results = trainer.train(train_loader, val_loader)
+```
+
+#### Multi-GPU (DDP)
+
+```bash
+# Train on 4 GPUs
+python train_multi_gpu.py --gpus 4 --batch-size 256 --epochs 10
+```
+
+#### Using the Launcher
+
+```python
+from tverskycv.training import launch_distributed_training
+
+launch_distributed_training(
+    num_gpus=4,
+    config_path='tverskycv/configs/fruits.yaml'
+)
+```
+
+#### Performance Expectations
+
+| Platform | GPUs | Time (10 epochs, Fruits-360) | Cost |
+|----------|------|------------------------------|------|
+| Colab Free (T4) | 1 | 30-40 min | FREE |
+| GCP (A100) | 1 | 10-15 min | ~$0.90 |
+| GCP (A100) | 4 | 3-5 min | ~$1.20 |
+| Lambda (RTX 6000) | 4 | 3-5 min | ~$0.37 |
+
+---
+
+## Key Features Explained
+
+### Transfer Learning
+
+Transfer learning uses pretrained ImageNet weights to improve performance and convergence speed.
+
+**Features:**
+- ImageNet pretrained ResNet backbones
+- Progressive unfreezing strategies
+- Static backbone freezing option
+- Automatic parameter tracking
+
+**Example:**
+```python
+# Load pretrained ResNet18
+backbone = BACKBONES.get('resnet18')(pretrained=True, out_dim=128)
+
+# Use in model
+model = ImageClassifier(backbone, head)
+```
+
+### Mixed Precision Training (AMP)
+
+Automatic Mixed Precision (AMP) uses FP16 for faster training with minimal accuracy impact.
+
+**Benefits:**
+- ~2x faster training
+- Lower GPU memory usage
+- Automatic precision management
+
+**Usage:**
+```python
+# Automatically enabled in OptimizedTrainer when CUDA is available
+trainer = OptimizedTrainer(model=model, device=torch.device('cuda'))
+```
+
+### TensorBoard Logging
+
+Comprehensive logging to TensorBoard for visualization and monitoring.
+
+**Logged Metrics:**
+- Training/validation loss and accuracy
+- Learning rate schedule
+- Model weights and gradients (periodic)
+- **Tversky parameters (alpha/beta)** - automatically tracked
+- Transfer learning metrics (unfreeze ratio, trainable params)
+
+**Usage:**
+```bash
+# Start TensorBoard
+tensorboard --logdir checkpoints/tensorboard
+
+# Or for training scripts
+tensorboard --logdir logs
+```
+
+**View in Browser:**
+Open `http://localhost:6006` to see:
+- Loss curves
+- Accuracy plots
+- Tversky parameter evolution (alpha/beta)
+- Weight distributions
+- Learning rate schedule
+
+### Config-Driven Architecture
+
+Swap models, datasets, and training settings via YAML configs without code changes.
+
+**Example:**
+```yaml
+model:
+  backbone:
+    name: resnet18  # Change to 'simple_cnn' or 'tversky_reduce_compact'
+    params:
+      pretrained: true
+      out_dim: 128
+  head:
+    name: linear  # Change to 'tversky'
+    params:
+      in_dim: 128
+      num_classes: 10
+```
+
+### Model Registry System
+
+Register and use custom backbones and heads via the registry.
+
+```python
+from tverskycv.registry import BACKBONES, HEADS
+
+# Register custom backbone
+@BACKBONES.register("my_backbone")
+def build_my_backbone(out_dim: int = 128, **_):
+    return MyCustomBackbone(out_dim=out_dim)
+
+# Use in config
+# model:
+#   backbone:
+#     name: my_backbone
+```
+
+### Parameter Sharing (GlobalFeature Bank)
+
+Share feature matrices and Tversky parameters across layers to reduce parameter count.
+
+**Benefits:**
+- Significant parameter reduction (50%+ in some cases)
+- Memory efficient
+- Maintains model performance
+
+**Usage:**
+```python
+from tverskycv.models.backbones.tversky_reduce_backbone import SharedTverskyCompact
+
+layer = SharedTverskyCompact(
+    in_features=512,
+    n_prototypes=128,
+    feature_key='shared',  # Same key = shared parameters
+    share_params=True
+)
+```
+
+---
+
+## Configuration
+
+Configuration files are YAML-based and control all aspects of training.
+
+### Basic Config Structure
+
+```yaml
+seed: 1337
+
+dataset:
+  name: mnist  # or 'fruits_360'
+  params:
+    data_dir: ./data
+    batch_size: 256
+    num_workers: 4
+
+model:
+  backbone:
+    name: simple_cnn  # or 'resnet18', 'tversky_reduce_compact'
+    params:
+      out_dim: 128
+      pretrained: false  # Set to true for transfer learning
+  head:
+    name: linear  # or 'tversky'
+    params:
+      in_dim: 128
+      num_classes: 10
 
 train:
   epochs: 10
   lr: 1e-3
-  device: cuda
+  weight_decay: 1e-4
+  device: cuda  # or 'cpu'
+  ckpt_dir: ./checkpoints
+
+logging:
+  use_tensorboard: true
+  use_wandb: false
 ```
 
----
+### Available Config Files
 
-## Testing
+- `tverskycv/configs/mnist.yaml` - MNIST classification
+- `tverskycv/configs/fruits.yaml` - Fruits-360 (GPU)
+- `tverskycv/configs/fruits_cpu.yaml` - Fruits-360 (CPU-optimized)
+- `tverskycv/configs/models/resnet18.yaml` - ResNet18 backbone config
+- `tverskycv/configs/models/tversky_reduce_compact.yaml` - TverskyReduceBackbone config
 
-Run all tests:
+### Modifying Configs
+
+Simply edit the YAML file or create a new one:
+
 ```bash
-pytest -q
+# Copy existing config
+cp tverskycv/configs/mnist.yaml my_config.yaml
+
+# Edit my_config.yaml
+# Then use it:
+python -m tverskycv.cli.train --config my_config.yaml
 ```
 
-Tests include:
-- `test_heads.py`
-- `test_backbones.py`
-- `test_wrapper.py`
-- `test_datamodule.py`
+---
 
-Goal:  
-✅ Validate shapes/gradients  
-✅ Fail fast when configs are wrong  
+## Model Architectures
+
+### Available Backbones
+
+#### SimpleCNN
+Basic convolutional neural network for quick experiments.
+
+```yaml
+backbone:
+  name: simple_cnn
+  params:
+    out_dim: 128
+```
+
+#### ResNet18
+ResNet18 with optional ImageNet pretrained weights.
+
+```yaml
+backbone:
+  name: resnet18
+  params:
+    out_dim: 128
+    pretrained: true  # Use ImageNet weights
+    in_channels: 3
+```
+
+#### TverskyReduceBackbone
+CNN with Tversky projection layers and parameter sharing.
+
+```yaml
+backbone:
+  name: tversky_reduce_compact
+  params:
+    out_dim: 128
+    in_channels: 3
+    img_size: 64
+    feature_key: main
+    share_features: true
+    alpha: 1.0
+    beta: 1.0
+```
+
+### Available Heads
+
+#### LinearHead
+Standard linear classification head.
+
+```yaml
+head:
+  name: linear
+  params:
+    in_dim: 128
+    num_classes: 10
+```
+
+#### TverskyHead
+Tversky-based projection head.
+
+```yaml
+head:
+  name: tversky
+  params:
+    in_dim: 128
+    num_classes: 10
+```
+
+### Swapping Models
+
+Change models by editing the config file—no code changes needed:
+
+```yaml
+# Switch from SimpleCNN to ResNet18
+model:
+  backbone:
+    name: resnet18  # Changed from 'simple_cnn'
+    params:
+      pretrained: true  # Added pretrained weights
+      out_dim: 128
+```
 
 ---
 
-## Development Workflow
+## Advanced Features
 
-1) Pick/modify config YAML  
-2) Run training  
-3) Swap heads/backbones as needed  
-4) Inspect results / log metrics  
-5) Iterate  
+### Transfer Learning Utilities
 
-Branching model:
-- `main` = stable
-- `feat/*` = feature branches
-- `exp/*` = experiments
+```python
+from tverskycv.training import (
+    freeze_backbone,
+    get_trainable_params,
+    ProgressiveUnfreezing
+)
+
+# Freeze/unfreeze backbone
+freeze_backbone(model, freeze=True)
+
+# Get parameter counts
+trainable = get_trainable_params(model)
+total = get_total_params(model)
+
+# Progressive unfreezing
+unfreezer = ProgressiveUnfreezing(model, schedule={0: 0.0, 5: 0.33, 10: 0.66, 15: 1.0})
+```
+
+### Checkpoint Management
+
+```python
+from tverskycv.training.utils import save_checkpoint, load_checkpoint
+
+# Save checkpoint
+save_checkpoint(
+    'checkpoints/model.pt',
+    model=model,
+    optimizer=optimizer,
+    extra={'epoch': epoch, 'best_acc': best_acc}
+)
+
+# Load checkpoint
+checkpoint = load_checkpoint(
+    'checkpoints/model.pt',
+    model=model,
+    optimizer=optimizer
+)
+```
+
+### ONNX Export
+
+Export models to ONNX format for deployment:
+
+```bash
+python -m tverskycv.scripts.export_onnx \
+    --config tverskycv/configs/mnist.yaml \
+    --ckpt checkpoints/best_model.pt \
+    --out model.onnx
+```
+
+### Custom Model Registration
+
+Register custom models for use in configs:
+
+```python
+from tverskycv.registry import BACKBONES, HEADS
+
+@BACKBONES.register("my_custom_backbone")
+def build_my_backbone(out_dim: int = 128, **kwargs):
+    return MyCustomBackbone(out_dim=out_dim, **kwargs)
+
+# Now use in config:
+# backbone:
+#   name: my_custom_backbone
+```
 
 ---
 
-## Roadmap
+## Examples
 
-✅ Basic MNIST baseline  
-✅ Linear projection head  
-✅ Registry for head + backbone swapping  
-✅ CLI + config system  
-✅ Unit testing + CI  
+### Example 1: MNIST Classification
 
-🚧 Tversky layer implementation  
-🚧 Visualization utilities for Tversky prototypes  
-🚧 Add CIFAR-10 support  
-🚧 Add Vision Transformers  
-🚧 ONNX + Torch-Script export  
-🚧 Model cards + benchmarks  
+```bash
+# Train on MNIST
+python -m tverskycv.cli.train --config tverskycv/configs/mnist.yaml
+
+# Evaluate
+python -m tverskycv.cli.eval \
+    --config tverskycv/configs/mnist.yaml \
+    --ckpt checkpoints/best_model.pt
+```
+
+### Example 2: Fruits-360 with Transfer Learning
+
+```python
+import torch
+from tverskycv.registry import BACKBONES, HEADS
+from tverskycv.models.wrappers.classifiers import ImageClassifier
+from tverskycv.training import OptimizedTrainer
+
+# Create model with pretrained ResNet18
+backbone = BACKBONES.get('resnet18')(
+    pretrained=True,
+    out_dim=128
+)
+head = HEADS.get('linear')(in_dim=128, num_classes=113)
+model = ImageClassifier(backbone, head)
+
+# Setup trainer with progressive unfreezing
+schedule = {0: 0.0, 5: 0.33, 10: 0.66, 15: 1.0}
+trainer = OptimizedTrainer(
+    model=model,
+    device=torch.device('cuda'),
+    num_epochs=30,
+    progressive_unfreezing=schedule
+)
+
+# Train (assuming data loaders are set up)
+results = trainer.train(train_loader, val_loader)
+```
+
+### Example 3: Multi-GPU Training
+
+```bash
+# Train on 4 GPUs
+python train_multi_gpu.py \
+    --gpus 4 \
+    --batch-size 256 \
+    --epochs 10 \
+    --config tverskycv/configs/fruits.yaml
+```
+
+### Example 4: Custom Training Loop
+
+```python
+from tverskycv.training.engine import train_one_epoch, evaluate
+from tverskycv.training.utils import set_seed, resolve_device
+
+set_seed(42)
+device = resolve_device('cuda')
+
+# Custom training loop
+for epoch in range(num_epochs):
+    train_metrics = train_one_epoch(
+        model, train_loader, optimizer, criterion, device
+    )
+    val_metrics = evaluate(model, val_loader, device, criterion)
+    print(f"Epoch {epoch}: Train Acc={train_metrics['accuracy']:.4f}, "
+          f"Val Acc={val_metrics['accuracy']:.4f}")
+```
 
 ---
 
-## References
-- Doumbouya et al. (2025).  
+## Troubleshooting
+
+### Common Issues
+
+#### Out of Memory
+
+**Solution:**
+- Reduce batch size in config: `batch_size: 8` (or 4)
+- Reduce image size: `img_size: 32`
+- Use CPU if GPU memory is limited
+
+#### Slow Training
+
+**Solutions:**
+- Enable mixed precision (automatic in OptimizedTrainer)
+- Reduce `num_workers` for CPU training
+- Use smaller image size
+- Enable GPU if available
+
+#### Import Errors
+
+**Solution:**
+```bash
+# Ensure virtual environment is activated
+source .venv/bin/activate
+
+# Reinstall dependencies
+pip install -r requirements.txt
+```
+
+#### TensorBoard Not Found
+
+**Solution:**
+```bash
+pip install tensorboard
+```
+
+#### Model Not Learning
+
+**Check:**
+- Learning rate (try 1e-4 to 1e-2)
+- Data normalization matches pretrained model (ImageNet stats)
+- Labels are correct (0 to num_classes-1)
+- Enable pretrained weights for transfer learning
+
+### Performance Tips
+
+1. **Use Transfer Learning**: Always use `pretrained: true` for ResNet backbones
+2. **Progressive Unfreezing**: Start with frozen backbone, gradually unfreeze
+3. **Mixed Precision**: Automatically enabled in OptimizedTrainer
+4. **Batch Size**: Larger batches = more stable training (if memory allows)
+5. **Learning Rate**: Use learning rate scheduling (OneCycleLR in OptimizedTrainer)
+
+### Hardware-Specific Notes
+
+**CPU Training:**
+- Use `fruits_cpu.yaml` config
+- Reduce batch size to 8-16
+- Set `num_workers: 2-4` based on CPU cores
+- Expect longer training times
+
+**GPU Training:**
+- Use default configs
+- Batch size 32-64 typically works
+- Enable mixed precision for 2x speedup
+- Monitor GPU memory usage
+
+---
+
+## References & Resources
+
+### Documentation Files
+
+- [`CLI_TRAINING_EXAMPLES.md`](CLI_TRAINING_EXAMPLES.md) - Detailed CLI usage examples
+- [`QUICK_START_TRAINING.md`](QUICK_START_TRAINING.md) - Quick start guide
+- [`GUIDE_90_PERCENT_ACCURACY.md`](GUIDE_90_PERCENT_ACCURACY.md) - Advanced training strategies
+- [`README_TRAINING.md`](README_TRAINING.md) - Multi-GPU training guide
+
+### Research Papers
+
+- **Doumbouya et al. (2025)**.  
   *Tversky Neural Networks: Psychologically Plausible Deep Learning with Differentiable Tversky Similarity*  
-  https://arxiv.org/abs/2506.11035  
+  https://arxiv.org/abs/2506.11035
 
-- Tversky, A. (1977).  
+- **Tversky, A. (1977)**.  
   *Features of similarity*. Psychological Review.
+
+### Related Resources
+
+- [PyTorch Documentation](https://pytorch.org/docs/)
+- [TensorBoard Guide](https://www.tensorflow.org/tensorboard)
+- [Hugging Face Datasets](https://huggingface.co/datasets)
 
 ---
 
 ## License
-MIT License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+## Acknowledgments
+
+This framework is based on research into Tversky similarity for neural networks. Special thanks to the research community for advancing psychologically plausible deep learning.
+
+---
+
+**Happy Training! 🚀**
