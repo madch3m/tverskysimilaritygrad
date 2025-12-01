@@ -375,6 +375,14 @@ class SharedTverskyCompact(TverskyCompact):
                     'beta': nn.Parameter(torch.tensor(beta))
                 }
                 self._global_feature.register_feature(param_key, params)
+                # CRITICAL: Register parameters with the module so optimizer can find them
+                self.register_parameter('alpha_shared', params['alpha'])
+                self.register_parameter('beta_shared', params['beta'])
+            else:
+                # If already exists, still register them with this module
+                existing_params = self._global_feature.get_feature(param_key)
+                self.register_parameter('alpha_shared', existing_params['alpha'])
+                self.register_parameter('beta_shared', existing_params['beta'])
             self._param_key = param_key
             self._alpha = None
             self._beta = None
@@ -387,14 +395,24 @@ class SharedTverskyCompact(TverskyCompact):
     def alpha(self):
         """Get alpha parameter."""
         if self._param_key:
-            return self._global_feature.get_feature(self._param_key)['alpha']
+            params = self._global_feature.get_feature(self._param_key)
+            if params and 'alpha' in params:
+                return params['alpha']
+            # Fallback to registered parameter if GlobalFeature access fails
+            if hasattr(self, 'alpha_shared'):
+                return self.alpha_shared
         return self._alpha
     
     @property
     def beta(self):
         """Get beta parameter."""
         if self._param_key:
-            return self._global_feature.get_feature(self._param_key)['beta']
+            params = self._global_feature.get_feature(self._param_key)
+            if params and 'beta' in params:
+                return params['beta']
+            # Fallback to registered parameter if GlobalFeature access fails
+            if hasattr(self, 'beta_shared'):
+                return self.beta_shared
         return self._beta
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -501,6 +519,14 @@ class SharedTverskyInterpretable(TverskyInterpretable):
                     'beta': nn.Parameter(torch.tensor(beta))
                 }
                 self._global_feature.register_feature(param_key, params)
+                # CRITICAL: Register parameters with the module so optimizer can find them
+                self.register_parameter('alpha_shared', params['alpha'])
+                self.register_parameter('beta_shared', params['beta'])
+            else:
+                # If already exists, still register them with this module
+                existing_params = self._global_feature.get_feature(param_key)
+                self.register_parameter('alpha_shared', existing_params['alpha'])
+                self.register_parameter('beta_shared', existing_params['beta'])
             self._param_key = param_key
             self._alpha = None
             self._beta = None
@@ -523,14 +549,24 @@ class SharedTverskyInterpretable(TverskyInterpretable):
     def alpha_param(self):
         """Get alpha parameter."""
         if self._param_key:
-            return self._global_feature.get_feature(self._param_key)['alpha']
+            params = self._global_feature.get_feature(self._param_key)
+            if params and 'alpha' in params:
+                return params['alpha']
+            # Fallback to registered parameter if GlobalFeature access fails
+            if hasattr(self, 'alpha_shared'):
+                return self.alpha_shared
         return self._alpha
     
     @property
     def beta_param(self):
         """Get beta parameter."""
         if self._param_key:
-            return self._global_feature.get_feature(self._param_key)['beta']
+            params = self._global_feature.get_feature(self._param_key)
+            if params and 'beta' in params:
+                return params['beta']
+            # Fallback to registered parameter if GlobalFeature access fails
+            if hasattr(self, 'beta_shared'):
+                return self.beta_shared
         return self._beta
     
     def _reset_parameters(self):
