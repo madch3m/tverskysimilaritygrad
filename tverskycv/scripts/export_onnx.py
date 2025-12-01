@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 from pathlib import Path
 
-from registry import BACKBONES, HEADS, DATASETS  # noqa: F401 (DATASETS unused here)
-from ..models.wrappers.classifiers import ImageClassifier
+from tverskycv.registry import BACKBONES, HEADS, DATASETS  # noqa: F401 (DATASETS unused here)
+from tverskycv.models.wrappers.classifiers import ImageClassifier
 
 
 def build_model_from_cfg(cfg: dict, device: str) -> nn.Module:

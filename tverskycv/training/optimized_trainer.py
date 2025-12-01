@@ -26,6 +26,22 @@ import time
 import os
 from typing import Optional, Dict, Any
 
+# Import transfer learning utilities
+from .utils import (
+    freeze_backbone as freeze_backbone_fn,
+    get_trainable_params,
+    get_total_params,
+    ProgressiveUnfreezing
+)
+
+# Conditional import for TensorBoard
+try:
+    from torch.utils.tensorboard import SummaryWriter
+    TENSORBOARD_AVAILABLE = True
+except ImportError:
+    TENSORBOARD_AVAILABLE = False
+    SummaryWriter = None
+
 # Conditional import for mixed precision (requires CUDA)
 try:
     from torch.cuda.amp import autocast, GradScaler
@@ -94,7 +110,15 @@ class OptimizedTrainer:
 
         gradient_clip: float = 1.0,
 
-        checkpoint_dir: str = 'checkpoints'
+        checkpoint_dir: str = 'checkpoints',
+
+        log_dir: Optional[str] = None,
+
+        use_tensorboard: bool = True,
+
+        freeze_backbone: bool = False,
+
+        progressive_unfreezing: Optional[Dict[int, float]] = None
 
     ):
 
@@ -108,11 +132,71 @@ class OptimizedTrainer:
 
         self.gradient_clip = gradient_clip
 
+        self.use_tensorboard = use_tensorboard and TENSORBOARD_AVAILABLE
+
+        self.freeze_backbone_flag = freeze_backbone
+
+        self.progressive_unfreezing = progressive_unfreezing
+
+        
+
+        # Setup progressive unfreezing if schedule provided
+
+        if progressive_unfreezing is not None:
+
+            self.unfreezer = ProgressiveUnfreezing(
+
+                model=self.model,
+
+                schedule=progressive_unfreezing,
+
+                layer_prefix='feature_extractor'
+
+            )
+
+            print(f"✓ Progressive unfreezing enabled: {progressive_unfreezing}")
+
+        else:
+
+            self.unfreezer = None
+
+            # Freeze backbone if requested (static freezing)
+
+            if freeze_backbone:
+
+                freeze_backbone_fn(self.model, freeze=True)
+
+                print(f"✓ Backbone frozen (transfer learning mode)")
+
         
 
         # Create checkpoint directory
 
         os.makedirs(checkpoint_dir, exist_ok=True)
+
+        
+
+        # Setup TensorBoard logging
+
+        if self.use_tensorboard and SummaryWriter is not None:
+
+            if log_dir is None:
+
+                log_dir = os.path.join(checkpoint_dir, 'tensorboard')
+
+            os.makedirs(log_dir, exist_ok=True)
+
+            self.writer = SummaryWriter(log_dir=log_dir)
+
+            print(f"✓ TensorBoard logging enabled: {log_dir}")
+
+        else:
+
+            self.writer = None
+
+            if use_tensorboard and not TENSORBOARD_AVAILABLE:
+
+                print("⚠ TensorBoard not available - install with: pip install tensorboard")
 
         
 
@@ -185,6 +269,48 @@ class OptimizedTrainer:
             anneal_strategy='cos'
 
         )
+    
+    def _extract_tversky_params(self) -> Dict[str, Optional[float]]:
+        """
+        Extract alpha and beta parameters from Tversky projection layers.
+        
+        Returns:
+            Dictionary with 'alpha' and 'beta' values, or None if not found.
+        """
+        alpha_val = None
+        beta_val = None
+        
+        try:
+            # Try to get from model.tversky_proj
+            if hasattr(self.model, 'tversky_proj'):
+                alpha_param = self.model.tversky_proj.alpha
+                beta_param = self.model.tversky_proj.beta
+                # Get scalar value if it's a Parameter
+                if alpha_param.numel() == 1:
+                    alpha_val = alpha_param.item()
+                else:
+                    alpha_val = alpha_param.data[0].item()
+                if beta_param.numel() == 1:
+                    beta_val = beta_param.item()
+                else:
+                    beta_val = beta_param.data[0].item()
+            # Try to get from model.backbone.tversky_proj
+            elif hasattr(self.model, 'backbone') and hasattr(self.model.backbone, 'tversky_proj'):
+                alpha_param = self.model.backbone.tversky_proj.alpha
+                beta_param = self.model.backbone.tversky_proj.beta
+                if alpha_param.numel() == 1:
+                    alpha_val = alpha_param.item()
+                else:
+                    alpha_val = alpha_param.data[0].item()
+                if beta_param.numel() == 1:
+                    beta_val = beta_param.item()
+                else:
+                    beta_val = beta_param.data[0].item()
+        except (AttributeError, KeyError, IndexError) as e:
+            # Silently fail if Tversky params not found
+            pass
+        
+        return {'alpha': alpha_val, 'beta': beta_val}
 
     
 
@@ -271,6 +397,20 @@ class OptimizedTrainer:
                       f"Loss={loss.item():.4f}, Acc={current_acc:.4f}, "
 
                       f"LR={self.scheduler.get_last_lr()[0]:.6f}")
+
+                
+
+                # Log to TensorBoard
+
+                if self.writer is not None:
+
+                    global_step = epoch * len(train_loader) + batch_idx
+
+                    self.writer.add_scalar('Loss/Train_Batch', loss.item(), global_step)
+
+                    self.writer.add_scalar('Accuracy/Train_Batch', current_acc, global_step)
+
+                    self.writer.add_scalar('Learning_Rate', self.scheduler.get_last_lr()[0], global_step)
 
         
 
@@ -434,6 +574,34 @@ class OptimizedTrainer:
 
             
 
+            # Progressive unfreezing (if enabled)
+
+            if self.unfreezer is not None:
+
+                unfreeze_ratio = self.unfreezer.unfreeze_for_epoch(epoch)
+
+                if unfreeze_ratio != self.unfreezer.current_ratio or epoch == 0:
+
+                    info = self.unfreezer.get_trainable_info()
+
+                    print(f"\n  Epoch {epoch+1}: Unfreeze ratio = {unfreeze_ratio:.2f}")
+
+                    print(f"    Trainable params: {info['trainable']:,} / {info['total']:,} ({info['trainable_ratio']*100:.1f}%)")
+
+                    
+
+                    # Log to TensorBoard
+
+                    if self.writer is not None:
+
+                        self.writer.add_scalar('Transfer_Learning/Unfreeze_Ratio', unfreeze_ratio, epoch)
+
+                        self.writer.add_scalar('Transfer_Learning/Trainable_Params', info['trainable'], epoch)
+
+                        self.writer.add_scalar('Transfer_Learning/Trainable_Ratio', info['trainable_ratio'], epoch)
+
+            
+
             # Train
 
             train_metrics = self.train_epoch(train_loader, epoch)
@@ -462,6 +630,49 @@ class OptimizedTrainer:
 
             
 
+            # Log to TensorBoard
+
+            if self.writer is not None:
+
+                self.writer.add_scalar('Loss/Train', train_metrics['loss'], epoch)
+
+                self.writer.add_scalar('Loss/Val', val_metrics['loss'], epoch)
+
+                self.writer.add_scalar('Accuracy/Train', train_metrics['accuracy'], epoch)
+
+                self.writer.add_scalar('Accuracy/Val', val_metrics['accuracy'], epoch)
+
+                self.writer.add_scalar('Learning_Rate', self.scheduler.get_last_lr()[0], epoch)
+
+                self.writer.add_scalar('Time/Epoch', epoch_time, epoch)
+
+                
+                
+                # Log Tversky parameters (alpha and beta) if available
+                tversky_params = self._extract_tversky_params()
+                if tversky_params['alpha'] is not None:
+                    self.writer.add_scalar('Tversky/Alpha', tversky_params['alpha'], epoch)
+                if tversky_params['beta'] is not None:
+                    self.writer.add_scalar('Tversky/Beta', tversky_params['beta'], epoch)
+
+                
+
+                # Log model weight histograms periodically
+
+                if (epoch + 1) % 5 == 0:
+
+                    for name, param in self.model.named_parameters():
+
+                        if param.requires_grad:
+
+                            self.writer.add_histogram(f'Weights/{name}', param.cpu(), epoch)
+
+                            if param.grad is not None:
+
+                                self.writer.add_histogram(f'Gradients/{name}', param.grad.cpu(), epoch)
+
+            
+
             # Print summary
 
             print(f"\n{'='*70}")
@@ -473,6 +684,13 @@ class OptimizedTrainer:
             print(f"Train - Loss: {train_metrics['loss']:.4f}, Acc: {train_metrics['accuracy']:.4f}")
 
             print(f"Val   - Loss: {val_metrics['loss']:.4f}, Acc: {val_metrics['accuracy']:.4f}")
+
+            
+            
+            # Print Tversky parameters if available
+            tversky_params = self._extract_tversky_params()
+            if tversky_params['alpha'] is not None and tversky_params['beta'] is not None:
+                print(f"Tversky - Alpha: {tversky_params['alpha']:.4f}, Beta: {tversky_params['beta']:.4f}")
 
             
 
@@ -511,6 +729,16 @@ class OptimizedTrainer:
         print(f"Best validation accuracy: {self.best_val_acc:.4f}")
 
         print(f"{'='*70}\n")
+
+        
+
+        # Close TensorBoard writer
+
+        if self.writer is not None:
+
+            self.writer.close()
+
+            print(f"✓ TensorBoard logs saved")
 
         
 
