@@ -18,4 +18,14 @@ try:
 except ImportError:
     pass
 
+# Export main API functions for easy access
+from .api import train, build_model, evaluate
+
 __version__ = "0.1.0"
+
+__all__ = [
+    'train',
+    'build_model',
+    'evaluate',
+    '__version__',
+]

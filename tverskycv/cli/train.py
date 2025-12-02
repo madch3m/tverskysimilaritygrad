@@ -1,80 +1,30 @@
 # tverskycv/cli/train.py
 import argparse
-import yaml
-import torch
-import torch.nn as nn
 
-from tverskycv.registry import BACKBONES, HEADS, DATASETS
-from tverskycv.models.wrappers.classifiers import ImageClassifier
-from tverskycv.training.engine import fit
-from tverskycv.training.utils import set_seed, resolve_device
-from tverskycv.training.optimizers import build_optimizer
-from tverskycv.training.schedulers import build_scheduler
+from tverskycv.training.entry_points import train_from_config
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train a TverskyCV model")
     parser.add_argument("--config", required=True, help="Path to YAML config file")
+    parser.add_argument("--ckpt", default=None, help="Optional checkpoint to resume from")
+    parser.add_argument("--device", default=None, help="Override device from config")
+    parser.add_argument("--use-optimized", action="store_true", help="Use OptimizedTrainer")
     args = parser.parse_args()
 
-    # -----------------------
-    # Load config
-    # -----------------------
-    cfg = yaml.safe_load(open(args.config, "r"))
-    seed = cfg.get("seed", 42)
-    set_seed(seed)
-
-    # -----------------------
-    # Dataset
-    # -----------------------
-    dataset_name = cfg["dataset"]["name"]
-    dataset_params = cfg["dataset"].get("params", {})
-    dm = DATASETS.get(dataset_name)(**dataset_params)
-
-    # -----------------------
-    # Model
-    # -----------------------
-    backbone_cfg = cfg["model"]["backbone"]
-    head_cfg = cfg["model"]["head"]
-
-    backbone = BACKBONES.get(backbone_cfg["name"])(**backbone_cfg.get("params", {}))
-    head = HEADS.get(head_cfg["name"])(**head_cfg.get("params", {}))
-    model = ImageClassifier(backbone, head)
-
-    device = resolve_device(cfg["train"].get("device", None))
-    model.to(device)
-
-    # -----------------------
-    # Optimizer + Scheduler
-    # -----------------------
-    optimizer_cfg = cfg.get("optimizer", {"name": "adamw", "params": {"lr": cfg["train"]["lr"]}})
-    optimizer = build_optimizer(model.parameters(), optimizer_cfg)
-
-    scheduler_cfg = cfg["train"].get("scheduler", None)
-    scheduler = build_scheduler(optimizer, scheduler_cfg)
-
-    # -----------------------
-    # Criterion
-    # -----------------------
-    criterion = nn.CrossEntropyLoss()
-
-    # -----------------------
-    # Training
-    # -----------------------
-    print(f"🚀 Starting training on {device} ...")
-
-    stats = fit(
-        model=model,
-        train_loader=dm.train_dataloader(),
-        val_loader=dm.val_dataloader(),
-        optimizer=optimizer,
-        criterion=criterion,
-        device=device,
-        epochs=cfg["train"]["epochs"],
-        scheduler=scheduler,
-        ckpt_dir=cfg["train"]["ckpt_dir"],
+    # Use unified training function
+    results = train_from_config(
+        config_path=args.config,
+        checkpoint_path=args.ckpt,
+        device=args.device,
+        use_optimized_trainer=args.use_optimized
     )
 
-    print(f"Best validation accuracy: {stats['best_val_acc']:.4f}")
+    print(f"\n✓ Training complete!")
+    print(f"Best validation accuracy: {results.get('best_val_acc', 0.0):.4f}")
+    if 'best_epoch' in results:
+        print(f"Best epoch: {results['best_epoch']}")
+
 
 if __name__ == "__main__":
     main()

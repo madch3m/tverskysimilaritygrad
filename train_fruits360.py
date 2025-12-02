@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
 Training script for TverskyCV models with enhanced logging
-Follows the same pattern as export_onnx.py using registry system
+Uses unified training utilities for consistency
 """
 
 import argparse
-import yaml
-import json
 import time
 from pathlib import Path
 from datetime import datetime
@@ -17,135 +15,18 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-# Optional TensorBoard import
-try:
-    from torch.utils.tensorboard import SummaryWriter
-    TENSORBOARD_AVAILABLE = True
-except ImportError:
-    try:
-        from tensorboard import SummaryWriter
-        TENSORBOARD_AVAILABLE = True
-    except ImportError:
-        TENSORBOARD_AVAILABLE = False
-        SummaryWriter = None  # Will be handled in TrainingLogger
-
-from tverskycv.registry import BACKBONES, HEADS, DATASETS
-from tverskycv.models.wrappers.classifiers import ImageClassifier
+# Use unified utilities
+from tverskycv.training.config_utils import load_config, validate_config
+from tverskycv.training.model_builder import build_model_from_config, count_parameters
+from tverskycv.training.setup import setup_training_from_config
+from tverskycv.training.checkpoint import load_checkpoint
+from tverskycv.training.logging import TrainingLogger
+from tverskycv.training.utils import set_seed
+from tverskycv.registry import DATASETS
 from tverskycv.training.engine import train_one_epoch, evaluate
-from tverskycv.training.utils import set_seed, resolve_device, save_checkpoint
-from tverskycv.training.optimizers import build_optimizer
-from tverskycv.training.schedulers import build_scheduler
-from tverskycv.models.backbones.shared_tversky import GlobalFeature
+from tverskycv.training.checkpoint import save_checkpoint
 
-
-class TrainingLogger:
-    """Comprehensive logging for training progress."""
-    
-    def __init__(self, log_dir: Path, use_tensorboard: bool = True, log_file: str = 'training.log'):
-        self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        
-        self.use_tensorboard = use_tensorboard and TENSORBOARD_AVAILABLE
-        if self.use_tensorboard and SummaryWriter is not None:
-            self.writer = SummaryWriter(log_dir=str(self.log_dir / 'tensorboard'))
-        else:
-            self.writer = None
-            if use_tensorboard and not TENSORBOARD_AVAILABLE:
-                print("⚠ TensorBoard not available, logging to file only")
-        
-        self.log_file_path = self.log_dir / log_file
-        self.metrics_history = {
-            'train_loss': [],
-            'train_acc': [],
-            'val_loss': [],
-            'val_acc': [],
-            'learning_rate': []
-        }
-        
-    def log(self, message: str, print_console: bool = True):
-        """Log message to file and optionally console."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_message = f"[{timestamp}] {message}"
-        
-        with open(self.log_file_path, 'a') as f:
-            f.write(log_message + '\n')
-        
-        if print_console:
-            print(log_message)
-    
-    def log_epoch(self, epoch: int, train_loss: float, train_acc: float, 
-                  val_loss: float, val_acc: float, lr: float):
-        """Log epoch metrics."""
-        self.metrics_history['train_loss'].append(train_loss)
-        self.metrics_history['train_acc'].append(train_acc)
-        self.metrics_history['val_loss'].append(val_loss)
-        self.metrics_history['val_acc'].append(val_acc)
-        self.metrics_history['learning_rate'].append(lr)
-        
-        if self.use_tensorboard and self.writer is not None:
-            self.writer.add_scalar('Loss/Train', train_loss, epoch)
-            self.writer.add_scalar('Loss/Val', val_loss, epoch)
-            self.writer.add_scalar('Accuracy/Train', train_acc, epoch)
-            self.writer.add_scalar('Accuracy/Val', val_acc, epoch)
-            self.writer.add_scalar('Learning_Rate', lr, epoch)
-    
-    def log_batch(self, epoch: int, batch_idx: int, total_batches: int, 
-                  loss: float, acc: float, lr: Optional[float] = None):
-        """Log batch-level metrics."""
-        if self.use_tensorboard and self.writer is not None:
-            global_step = epoch * total_batches + batch_idx
-            self.writer.add_scalar('Loss/Train_Batch', loss, global_step)
-            self.writer.add_scalar('Accuracy/Train_Batch', acc, global_step)
-            if lr is not None:
-                self.writer.add_scalar('Learning_Rate_Batch', lr, global_step)
-    
-    def log_model_weights(self, model: nn.Module, epoch: int):
-        """Log model weight histograms."""
-        if self.use_tensorboard and self.writer is not None:
-            for name, param in model.named_parameters():
-                self.writer.add_histogram(f'Weights/{name}', param.cpu(), epoch)
-    
-    def save_metrics(self, filepath: str = 'metrics.json'):
-        """Save metrics history to JSON."""
-        filepath = self.log_dir / filepath
-        with open(filepath, 'w') as f:
-            json.dump(self.metrics_history, f, indent=2)
-        self.log(f"Metrics saved to {filepath}")
-    
-    def close(self):
-        """Close logger and flush all logs."""
-        if self.use_tensorboard and self.writer is not None:
-            self.writer.close()
-        self.log("Training logger closed")
-
-
-def build_model_from_cfg(cfg: dict, device: torch.device) -> nn.Module:
-    """Build backbone + head per config and return wrapped model on device."""
-    backbone_cfg = cfg["model"]["backbone"]
-    head_cfg = cfg["model"]["head"]
-    
-    backbone = BACKBONES.get(backbone_cfg["name"])(**backbone_cfg.get("params", {}))
-    head = HEADS.get(head_cfg["name"])(**head_cfg.get("params", {}))
-    
-    model = ImageClassifier(backbone, head).to(device)
-    model.eval()  # Will be set to train() in training loop
-    return model
-
-
-def maybe_load_checkpoint(model: nn.Module, ckpt_path: Optional[str], device: torch.device) -> Dict[str, Any]:
-    """Load checkpoint if provided, return checkpoint dict or empty dict."""
-    if not ckpt_path or not Path(ckpt_path).exists():
-        return {}
-    
-    ckpt = torch.load(ckpt_path, map_location=device)
-    state = ckpt.get("model_state_dict", ckpt.get("model", ckpt))
-    model.load_state_dict(state, strict=False)
-    return ckpt
-
-
-def count_parameters(model: nn.Module) -> int:
-    """Count trainable parameters."""
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+# TrainingLogger, build_model_from_cfg, and count_parameters are now in unified modules
 
 
 def train_with_logging(
@@ -333,15 +214,13 @@ def main():
     parser.add_argument("--device", default=None, help="Override device from config")
     args = parser.parse_args()
     
-    # Load config
-    cfg = yaml.safe_load(open(args.config, "r"))
+    # Load and validate config using unified utilities
+    cfg = load_config(args.config)
+    validate_config(cfg)
     
     # Set seed
     seed = cfg.get("seed", 42)
     set_seed(seed)
-    
-    # Resolve device
-    device = resolve_device(args.device or cfg["train"].get("device", None))
     
     # Setup logging
     log_dir = Path(args.log_dir) / datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -352,26 +231,31 @@ def main():
     logger.log("Training Configuration")
     logger.log("=" * 70)
     logger.log(f"Config file: {args.config}")
-    logger.log(f"Device: {device}")
+    logger.log(f"Device: {args.device or cfg.get('train', {}).get('device', 'auto')}")
     logger.log(f"Seed: {seed}")
     logger.log(f"TensorBoard: {use_tensorboard}")
     logger.log("=" * 70)
     
-    # Clear GlobalFeature bank if using shared features
-    gf = GlobalFeature()
-    gf.clear()
-    
-    # Build model from config (same pattern as export_onnx.py)
+    # Build model using unified utilities
     logger.log("Building model from config...")
-    model = build_model_from_cfg(cfg, device)
-    num_params = count_parameters(model)
-    logger.log(f"✓ Model created with {num_params:,} trainable parameters")
+    device = torch.device(args.device or cfg.get('train', {}).get('device', 'cuda' if torch.cuda.is_available() else 'cpu'))
+    model = build_model_from_config(cfg, device)
+    total_params, trainable_params = count_parameters(model)
+    logger.log(f"✓ Model created: {total_params:,} total, {trainable_params:,} trainable parameters")
+    
+    # Setup training components using unified utilities
+    setup = setup_training_from_config(cfg, model, args)
+    optimizer = setup['optimizer']
+    scheduler = setup['scheduler']
+    criterion = setup['criterion']
+    ckpt_dir = setup['checkpoint_dir']
+    epochs = setup['epochs']
     
     # Load checkpoint if provided
     resume_epoch = 0
     if args.ckpt:
         logger.log(f"Loading checkpoint: {args.ckpt}")
-        ckpt = maybe_load_checkpoint(model, args.ckpt, device)
+        ckpt = load_checkpoint(args.ckpt, model, device, optimizer)
         if ckpt:
             resume_epoch = ckpt.get("epoch", 0)
             logger.log(f"✓ Resumed from epoch {resume_epoch}")
@@ -383,23 +267,9 @@ def main():
     dm = DATASETS.get(dataset_name)(**dataset_params)
     logger.log(f"✓ Dataset loaded: {len(dm.train)} train, {len(dm.val)} val samples")
     
-    # Optimizer + Scheduler
-    optimizer_cfg = cfg.get("optimizer", {"name": "adamw", "params": {"lr": cfg["train"]["lr"]}})
-    optimizer = build_optimizer(model.parameters(), optimizer_cfg)
-    
-    scheduler_cfg = cfg["train"].get("scheduler", None)
-    scheduler = build_scheduler(optimizer, scheduler_cfg)
-    
-    # Criterion
-    criterion = nn.CrossEntropyLoss()
-    
-    # Checkpoint directory
-    ckpt_dir = cfg["train"].get("ckpt_dir", "./checkpoints")
-    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
-    
     # Training
     logger.log("=" * 70)
-    logger.log(f"Starting training for {cfg['train']['epochs']} epochs")
+    logger.log(f"Starting training for {epochs} epochs")
     logger.log("=" * 70)
     
     start_time = time.time()
@@ -411,7 +281,7 @@ def main():
         optimizer=optimizer,
         criterion=criterion,
         device=device,
-        epochs=cfg["train"]["epochs"],
+        epochs=epochs,
         scheduler=scheduler,
         ckpt_dir=ckpt_dir,
         logger=logger,

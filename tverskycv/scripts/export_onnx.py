@@ -1,34 +1,11 @@
 import argparse
-import yaml
 import torch
-import torch.nn as nn
 from pathlib import Path
 
-from tverskycv.registry import BACKBONES, HEADS, DATASETS  # noqa: F401 (DATASETS unused here)
-from tverskycv.models.wrappers.classifiers import ImageClassifier
-
-
-def build_model_from_cfg(cfg: dict, device: str) -> nn.Module:
-    """Build backbone + head per config and return wrapped model on device."""
-    backbone_name = cfg["model"]["backbone"]["name"]
-    backbone_params = cfg["model"]["backbone"].get("params", {})
-    backbone = BACKBONES.get(backbone_name)(**backbone_params)
-
-    head_name = cfg["model"]["head"]["name"]
-    head_params = cfg["model"]["head"].get("params", {})
-    head = HEADS.get(head_name)(**head_params)
-
-    model = ImageClassifier(backbone, head).to(device)
-    model.eval()
-    return model
-
-
-def maybe_load_checkpoint(model: nn.Module, ckpt_path: str, device: str) -> None:
-    if not ckpt_path:
-        return
-    ckpt = torch.load(ckpt_path, map_location=device)
-    state = ckpt.get("model", ckpt)
-    model.load_state_dict(state)
+# Use unified utilities
+from tverskycv.training.config_utils import load_config
+from tverskycv.training.model_builder import build_model_from_config
+from tverskycv.training.checkpoint import load_checkpoint
 
 
 def main():
@@ -43,11 +20,16 @@ def main():
     ap.add_argument("--device", default="cpu", help="cpu or cuda")
     args = ap.parse_args()
 
-    cfg = yaml.safe_load(open(args.config, "r"))
+    # Load config using unified utilities
+    cfg = load_config(args.config)
 
-    device = args.device
-    model = build_model_from_cfg(cfg, device)
-    maybe_load_checkpoint(model, args.ckpt, device)
+    device = torch.device(args.device)
+    model = build_model_from_config(cfg, device)
+    model.eval()
+    
+    # Load checkpoint if provided
+    if args.ckpt:
+        load_checkpoint(args.ckpt, model, device)
 
     # Dummy input
     bs, c, h, w = args.batch_size, args.in_ch, args.img_size, args.img_size

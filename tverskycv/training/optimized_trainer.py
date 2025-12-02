@@ -24,6 +24,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 import time
 import os
+import shutil
 from typing import Optional, Dict, Any
 
 # Import transfer learning utilities
@@ -88,6 +89,10 @@ class OptimizedTrainer:
 
     - Best model checkpointing
 
+    - Early stopping when validation accuracy reaches threshold (default: 90%)
+
+    - Automatic TensorBoard log saving to Google Drive (Colab only)
+
     """
 
     
@@ -118,7 +123,11 @@ class OptimizedTrainer:
 
         freeze_backbone: bool = False,
 
-        progressive_unfreezing: Optional[Dict[int, float]] = None
+        progressive_unfreezing: Optional[Dict[int, float]] = None,
+
+        early_stopping_threshold: Optional[float] = 0.90,
+
+        save_tensorboard_to_drive: bool = True
 
     ):
 
@@ -137,6 +146,12 @@ class OptimizedTrainer:
         self.freeze_backbone_flag = freeze_backbone
 
         self.progressive_unfreezing = progressive_unfreezing
+
+        self.early_stopping_threshold = early_stopping_threshold
+
+        self.save_tensorboard_to_drive = save_tensorboard_to_drive
+
+        self.log_dir = log_dir if log_dir else os.path.join(checkpoint_dir, 'tensorboard')
 
         
 
@@ -180,15 +195,11 @@ class OptimizedTrainer:
 
         if self.use_tensorboard and SummaryWriter is not None:
 
-            if log_dir is None:
+            os.makedirs(self.log_dir, exist_ok=True)
 
-                log_dir = os.path.join(checkpoint_dir, 'tensorboard')
+            self.writer = SummaryWriter(log_dir=self.log_dir)
 
-            os.makedirs(log_dir, exist_ok=True)
-
-            self.writer = SummaryWriter(log_dir=log_dir)
-
-            print(f"✓ TensorBoard logging enabled: {log_dir}")
+            print(f"✓ TensorBoard logging enabled: {self.log_dir}")
 
         else:
 
@@ -313,6 +324,54 @@ class OptimizedTrainer:
         return {'alpha': alpha_val, 'beta': beta_val}
 
     
+    def _save_tensorboard_to_drive(self) -> Optional[str]:
+        """
+        Save TensorBoard event files to Google Drive (if in Colab and Drive is mounted).
+        
+        Returns:
+            Path to saved TensorBoard logs in Drive, or None if not saved.
+        """
+        if not self.save_tensorboard_to_drive or not self.use_tensorboard:
+            return None
+        
+        # Check if running in Colab
+        try:
+            import google.colab
+            IN_COLAB = True
+        except ImportError:
+            IN_COLAB = False
+        
+        if not IN_COLAB:
+            print("  ℹ Not running in Colab - skipping Drive save")
+            return None
+        
+        # Check if Drive is mounted
+        drive_path = '/content/drive/MyDrive'
+        if not os.path.exists(drive_path):
+            print("  ⚠ Google Drive not mounted - skipping Drive save")
+            print("    To mount Drive, run: from google.colab import drive; drive.mount('/content/drive')")
+            return None
+        
+        # Create directory in Drive for TensorBoard logs
+        import datetime
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        drive_tb_dir = os.path.join(drive_path, 'tversky_tensorboard_logs', f'training_{timestamp}')
+        
+        try:
+            # Copy entire TensorBoard log directory to Drive
+            if os.path.exists(self.log_dir) and os.listdir(self.log_dir):
+                os.makedirs(drive_tb_dir, exist_ok=True)
+                shutil.copytree(self.log_dir, drive_tb_dir, dirs_exist_ok=True)
+                
+                print(f"  ✓ TensorBoard logs saved to Drive: {drive_tb_dir}")
+                print(f"    To view: %tensorboard --logdir {drive_tb_dir}")
+                return drive_tb_dir
+            else:
+                print("  ⚠ TensorBoard log directory is empty - nothing to save")
+                return None
+        except Exception as e:
+            print(f"  ⚠ Error saving TensorBoard logs to Drive: {e}")
+            return None
 
     def train_epoch(self, train_loader: DataLoader, epoch: int) -> Dict[str, float]:
 
@@ -560,6 +619,10 @@ class OptimizedTrainer:
 
         print(f"Batches per epoch: {len(train_loader)}")
 
+        if self.early_stopping_threshold is not None:
+
+            print(f"Early stopping threshold: {self.early_stopping_threshold:.4f} (90%)")
+
         print(f"{'='*70}\n")
 
         
@@ -708,6 +771,42 @@ class OptimizedTrainer:
 
             print(f"{'='*70}\n")
 
+            
+
+            # Early stopping check: Stop if validation accuracy reaches threshold
+
+            if self.early_stopping_threshold is not None and val_metrics['accuracy'] >= self.early_stopping_threshold:
+
+                print(f"\n{'='*70}")
+
+                print(f"🎉 Early Stopping Triggered!")
+
+                print(f"{'='*70}")
+
+                print(f"Validation accuracy ({val_metrics['accuracy']:.4f}) has reached the threshold ({self.early_stopping_threshold:.4f})")
+
+                print(f"Stopping training at epoch {epoch+1}/{self.num_epochs}")
+
+                print(f"Best validation accuracy: {self.best_val_acc:.4f}")
+
+                print(f"{'='*70}\n")
+
+                # Save TensorBoard logs to Drive before stopping
+
+                if self.writer is not None:
+
+                    self.writer.close()
+
+                    print(f"✓ TensorBoard logs saved locally: {self.log_dir}")
+
+                    drive_path = self._save_tensorboard_to_drive()
+
+                    if drive_path:
+
+                        print(f"✓ TensorBoard logs also saved to Drive")
+
+                break
+
         
 
         # Final summary
@@ -738,7 +837,15 @@ class OptimizedTrainer:
 
             self.writer.close()
 
-            print(f"✓ TensorBoard logs saved")
+            print(f"✓ TensorBoard logs saved locally: {self.log_dir}")
+
+            # Save to Google Drive if requested and in Colab
+
+            drive_path = self._save_tensorboard_to_drive()
+
+            if drive_path:
+
+                print(f"✓ TensorBoard logs also saved to Drive")
 
         
 
