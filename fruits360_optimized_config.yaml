@@ -1,0 +1,67 @@
+# Optimized Configuration for Fruits-360 Classification
+# Target: 90%+ accuracy on 113 classes
+
+seed: 42
+
+dataset:
+  name: "fruits360"
+  params:
+    root: "./data/fruits-360"  # Update to your data path
+    batch_size: 64  # Increase if you have more GPU memory
+    num_workers: 4
+    image_size: 224  # Standard ImageNet size for better transfer learning
+    augmentation: true
+    
+model:
+  backbone:
+    name: "resnet50_tversky"  # Or your TverskyReduceBackbone
+    params:
+      pretrained: true  # CRITICAL: Use ImageNet pretrained weights
+      num_classes: 113
+      dropout: 0.3  # Add dropout for regularization
+      
+  head:
+    name: "linear_head"
+    params:
+      num_classes: 113
+      dropout: 0.2
+
+train:
+  epochs: 50  # Train longer for better convergence
+  lr: 0.001  # Start with reasonable learning rate
+  device: "cuda"  # or "cpu"
+  ckpt_dir: "./checkpoints/fruits360_optimized"
+  
+  # Optimizer configuration
+  optimizer:
+    name: "adamw"
+    params:
+      lr: 0.001
+      weight_decay: 0.01  # L2 regularization
+      betas: [0.9, 0.999]
+  
+  # Learning rate scheduling - CRITICAL for convergence
+  scheduler:
+    name: "cosine_warmup"
+    params:
+      warmup_epochs: 5
+      min_lr: 1.0e-6
+      
+  # Loss function
+  criterion:
+    name: "cross_entropy"
+    label_smoothing: 0.1  # Helps with generalization
+
+# Advanced training options
+training:
+  gradient_clip: 1.0  # Prevent exploding gradients
+  mixed_precision: true  # Faster training with FP16
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
+  
+logging:
+  use_tensorboard: true
+  log_interval: 50
+  save_best: true
+  save_frequency: 5  # Save checkpoint every 5 epochs

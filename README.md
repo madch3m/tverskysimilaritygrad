@@ -327,6 +327,115 @@ for epoch in range(num_epochs):
     print(f"Epoch {epoch}: {info['trainable']:,} trainable params")
 ```
 
+#### Loading Models and TensorBoard Logs
+
+The `load_model()` function provides a convenient way to load trained models along with their associated TensorBoard logs and training metadata.
+
+**Basic Usage:**
+
+```python
+from tverskycv import load_model
+
+# Load model with automatic TensorBoard log discovery
+result = load_model(
+    checkpoint_path='checkpoints/best_model.pt',
+    config_path='tverskycv/configs/fruits.yaml'
+)
+
+model = result['model']
+checkpoint_info = result['checkpoint_info']
+tensorboard_log_dir = result['tensorboard_log_dir']
+
+# Access training metadata
+print(f"Best validation accuracy: {checkpoint_info.get('best_val_acc', 'N/A'):.4f}")
+print(f"Trained for {checkpoint_info.get('epoch', 'N/A')} epochs")
+print(f"TensorBoard logs: {tensorboard_log_dir}")
+
+# View TensorBoard (in Jupyter/Colab)
+# %tensorboard --logdir {tensorboard_log_dir}
+```
+
+**Loading with Optimizer State:**
+
+```python
+# Load model and optimizer state for resuming training
+result = load_model(
+    checkpoint_path='checkpoints/checkpoint_epoch_10.pt',
+    config_path='config.yaml',
+    load_optimizer=True
+)
+
+model = result['model']
+optimizer_state = result['optimizer_state_dict']
+scheduler_state = result['scheduler_state_dict']
+
+# Restore optimizer state if needed
+if optimizer_state:
+    optimizer.load_state_dict(optimizer_state)
+if scheduler_state:
+    scheduler.load_state_dict(scheduler_state)
+```
+
+**Listing Available Checkpoints:**
+
+```python
+from tverskycv import list_checkpoints
+
+# List all checkpoints in a directory
+checkpoints = list_checkpoints('checkpoints/')
+
+# Checkpoints are sorted by best validation accuracy
+for ckpt in checkpoints:
+    print(f"Path: {ckpt['path']}")
+    print(f"  Best Val Acc: {ckpt.get('best_val_acc', 'N/A'):.4f}")
+    print(f"  Epoch: {ckpt.get('epoch', 'N/A')}")
+    print(f"  Size: {ckpt['size_mb']:.2f} MB")
+    print()
+
+# Find the best checkpoint
+best_ckpt = checkpoints[0]  # Already sorted by best_val_acc
+print(f"Best checkpoint: {best_ckpt['path']}")
+```
+
+**Finding TensorBoard Logs Manually:**
+
+```python
+from tverskycv.training.checkpoint import find_tensorboard_logs
+
+# Find TensorBoard logs for a specific checkpoint
+tb_log_dir = find_tensorboard_logs('checkpoints/best_model.pt')
+
+if tb_log_dir:
+    print(f"TensorBoard logs found: {tb_log_dir}")
+    # Start TensorBoard: tensorboard --logdir {tb_log_dir}
+else:
+    print("TensorBoard logs not found")
+```
+
+**Complete Example: Load and Evaluate:**
+
+```python
+from tverskycv import load_model, evaluate
+
+# Load trained model
+result = load_model(
+    checkpoint_path='checkpoints/best_model.pt',
+    config_path='tverskycv/configs/fruits.yaml'
+)
+
+model = result['model']
+model.eval()
+
+# Evaluate on validation set
+eval_results = evaluate(model, 'tverskycv/configs/fruits.yaml', split='val')
+print(f"Validation accuracy: {eval_results['accuracy']:.4f}")
+
+# View training history in TensorBoard
+if result['tensorboard_log_dir']:
+    print(f"\nTo view training history:")
+    print(f"  tensorboard --logdir {result['tensorboard_log_dir']}")
+```
+
 ### Jupyter Notebooks
 
 Interactive notebooks are available for experimentation and learning.
@@ -362,6 +471,64 @@ jupyter lab
 
 # Navigate to tverskycv/notebooks/ and open the desired notebook
 ```
+
+### Loading Models and Checkpoints
+
+After training, you can easily load models along with their TensorBoard logs and training metadata.
+
+**Quick Example:**
+
+```python
+from tverskycv import load_model
+
+# Load model with automatic TensorBoard discovery
+result = load_model(
+    checkpoint_path='checkpoints/best_model.pt',
+    config_path='tverskycv/configs/fruits.yaml'
+)
+
+model = result['model']
+print(f"Best accuracy: {result['checkpoint_info']['best_val_acc']:.4f}")
+print(f"TensorBoard logs: {result['tensorboard_log_dir']}")
+```
+
+**Key Features:**
+- ✅ Automatic TensorBoard log discovery
+- ✅ Checkpoint metadata extraction (epoch, accuracy, etc.)
+- ✅ Config-aware model rebuilding
+- ✅ Optional optimizer/scheduler state loading
+- ✅ List and compare checkpoints
+
+See the [Checkpoint Management](#checkpoint-management) section for detailed examples.
+
+### Loading Models and Checkpoints
+
+After training, you can easily load models along with their TensorBoard logs and training metadata.
+
+**Quick Example:**
+
+```python
+from tverskycv import load_model
+
+# Load model with automatic TensorBoard discovery
+result = load_model(
+    checkpoint_path='checkpoints/best_model.pt',
+    config_path='tverskycv/configs/fruits.yaml'
+)
+
+model = result['model']
+print(f"Best accuracy: {result['checkpoint_info']['best_val_acc']:.4f}")
+print(f"TensorBoard logs: {result['tensorboard_log_dir']}")
+```
+
+**Key Features:**
+- ✅ Automatic TensorBoard log discovery
+- ✅ Checkpoint metadata extraction (epoch, accuracy, etc.)
+- ✅ Config-aware model rebuilding
+- ✅ Optional optimizer/scheduler state loading
+- ✅ List and compare checkpoints
+
+See the [Checkpoint Management](#checkpoint-management) section for detailed examples.
 
 ### Multi-GPU Training
 
@@ -702,24 +869,87 @@ unfreezer = ProgressiveUnfreezing(model, schedule={0: 0.0, 5: 0.33, 10: 0.66, 15
 
 ### Checkpoint Management
 
+#### Using the High-Level API (Recommended)
+
+The `load_model()` function is the easiest way to load models with automatic TensorBoard log discovery:
+
 ```python
-from tverskycv.training.utils import save_checkpoint, load_checkpoint
+from tverskycv import load_model, list_checkpoints
+
+# Load model with TensorBoard logs
+result = load_model(
+    checkpoint_path='checkpoints/best_model.pt',
+    config_path='tverskycv/configs/fruits.yaml'
+)
+
+model = result['model']
+print(f"Best accuracy: {result['checkpoint_info']['best_val_acc']:.4f}")
+print(f"TensorBoard: {result['tensorboard_log_dir']}")
+
+# List all checkpoints
+checkpoints = list_checkpoints('checkpoints/')
+for ckpt in checkpoints:
+    print(f"{ckpt['path']}: {ckpt.get('best_val_acc', 'N/A')}")
+```
+
+#### Using Low-Level Utilities
+
+For more control, use the low-level checkpoint utilities:
+
+```python
+from tverskycv.training.checkpoint import (
+    save_checkpoint,
+    load_checkpoint,
+    get_checkpoint_info,
+    find_tensorboard_logs
+)
 
 # Save checkpoint
 save_checkpoint(
     'checkpoints/model.pt',
     model=model,
     optimizer=optimizer,
-    extra={'epoch': epoch, 'best_acc': best_acc}
+    epoch=epoch,
+    val_acc=val_acc,
+    best_val_acc=best_val_acc
 )
 
-# Load checkpoint
+# Load checkpoint (requires model instance)
 checkpoint = load_checkpoint(
     'checkpoints/model.pt',
     model=model,
+    device=device,
     optimizer=optimizer
 )
+
+# Get checkpoint metadata without loading model
+info = get_checkpoint_info('checkpoints/best_model.pt')
+print(f"Epoch: {info.get('epoch')}, Best Acc: {info.get('best_val_acc')}")
+
+# Find TensorBoard logs
+tb_dir = find_tensorboard_logs('checkpoints/best_model.pt')
+if tb_dir:
+    print(f"TensorBoard logs: {tb_dir}")
 ```
+
+#### Checkpoint Directory Structure
+
+When using `OptimizedTrainer`, checkpoints are organized as:
+
+```
+checkpoints/
+├── best_model.pt          # Best model by validation accuracy
+├── checkpoint_epoch_5.pt  # Periodic checkpoints
+├── checkpoint_epoch_10.pt
+└── tensorboard/          # TensorBoard event files
+    └── events.out.tfevents.*
+```
+
+The `load_model()` function automatically searches for TensorBoard logs in common locations:
+- `checkpoint_dir/tensorboard/`
+- `checkpoint_dir/tb_logs/`
+- `checkpoint_dir/logs/`
+- `checkpoint_dir/runs/`
 
 ### ONNX Export
 
@@ -804,7 +1034,37 @@ python train_multi_gpu.py \
     --config tverskycv/configs/fruits.yaml
 ```
 
-### Example 4: Custom Training Loop
+### Example 4: Loading and Evaluating a Trained Model
+
+```python
+from tverskycv import load_model, evaluate, list_checkpoints
+
+# List available checkpoints
+checkpoints = list_checkpoints('checkpoints/')
+print(f"Found {len(checkpoints)} checkpoints")
+
+# Load the best model
+best_ckpt = checkpoints[0]  # Sorted by best_val_acc
+result = load_model(
+    checkpoint_path=best_ckpt['path'],
+    config_path='tverskycv/configs/fruits.yaml'
+)
+
+model = result['model']
+print(f"Loaded model from epoch {result['checkpoint_info'].get('epoch')}")
+print(f"Best validation accuracy: {result['checkpoint_info'].get('best_val_acc'):.4f}")
+
+# Evaluate on validation set
+eval_results = evaluate(model, 'tverskycv/configs/fruits.yaml', split='val')
+print(f"Current validation accuracy: {eval_results['accuracy']:.4f}")
+
+# View TensorBoard logs
+if result['tensorboard_log_dir']:
+    print(f"\nView training history:")
+    print(f"  tensorboard --logdir {result['tensorboard_log_dir']}")
+```
+
+### Example 5: Custom Training Loop
 
 ```python
 from tverskycv.training.engine import train_one_epoch, evaluate
@@ -900,7 +1160,6 @@ pip install tensorboard
 
 - [`CLI_TRAINING_EXAMPLES.md`](CLI_TRAINING_EXAMPLES.md) - Detailed CLI usage examples
 - [`QUICK_START_TRAINING.md`](QUICK_START_TRAINING.md) - Quick start guide
-- [`GUIDE_90_PERCENT_ACCURACY.md`](GUIDE_90_PERCENT_ACCURACY.md) - Advanced training strategies
 - [`README_TRAINING.md`](README_TRAINING.md) - Multi-GPU training guide
 
 ### Research Papers
