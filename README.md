@@ -623,22 +623,159 @@ Comprehensive logging to TensorBoard for visualization and monitoring.
 - **Tversky parameters (alpha/beta)** - automatically tracked
 - Transfer learning metrics (unfreeze ratio, trainable params)
 
-**Usage:**
-```bash
-# Start TensorBoard
-tensorboard --logdir checkpoints/tensorboard
+#### Loading TensorBoard in Google Colab
 
-# Or for training scripts
-tensorboard --logdir logs
+When using the `Classification_Colab.ipynb` notebook, TensorBoard logs are automatically saved to `checkpoints/tensorboard/` during training.
+
+**Method 1: Using TensorBoard Magic Command (Recommended)**
+
+After training completes, run this cell in the notebook:
+
+```python
+# Load TensorBoard extension
+%load_ext tensorboard
+
+# View TensorBoard logs
+%tensorboard --logdir checkpoints/tensorboard/ --reload_interval 1
 ```
 
-**View in Browser:**
-Open `http://localhost:6006` to see:
-- Loss curves
-- Accuracy plots
-- Tversky parameter evolution (alpha/beta)
-- Weight distributions
-- Learning rate schedule
+The TensorBoard interface will appear directly in the notebook cell output.
+
+**Method 2: Using TensorBoard in a Separate Cell**
+
+```python
+# In a new cell
+from IPython.display import display, HTML
+
+# Start TensorBoard
+%load_ext tensorboard
+%tensorboard --logdir checkpoints/tensorboard/
+```
+
+**Note:** The path `checkpoints/tensorboard/` is relative to the notebook's working directory. In Colab, this is typically `/content/tverskysimilaritygrad/checkpoints/tensorboard/` after cloning the repository.
+
+#### Loading TensorBoard Locally
+
+**Step 1: Install TensorBoard (if not already installed)**
+
+```bash
+pip install tensorboard
+```
+
+**Step 2: Start TensorBoard**
+
+Navigate to your project directory and run:
+
+```bash
+# For checkpoints from training
+tensorboard --logdir checkpoints/tensorboard
+
+# Or for logs from training scripts
+tensorboard --logdir logs
+
+# Or specify a custom log directory
+tensorboard --logdir /path/to/your/logs
+```
+
+**Step 3: View in Browser**
+
+Open your web browser and navigate to:
+```
+http://localhost:6006
+```
+
+TensorBoard will automatically refresh as new logs are written during training.
+
+#### TensorBoard Directory Structure
+
+When training with `OptimizedTrainer` or the Colab notebook, logs are organized as:
+
+```
+checkpoints/
+├── best_model.pth          # Best model checkpoint
+├── checkpoint_epoch_5.pth  # Periodic checkpoints
+└── tensorboard/            # TensorBoard event files
+    └── events.out.tfevents.*
+```
+
+#### What You'll See in TensorBoard
+
+**Scalars Tab:**
+- `Train_Loss` / `Val_Loss` - Training and validation loss over epochs
+- `Training_Acc` / `Val_Acc` - Training and validation accuracy
+- `Learning_Rate` - Learning rate schedule
+- `Tversky/Alpha` - Evolution of Tversky alpha parameter
+- `Tversky/Beta` - Evolution of Tversky beta parameter
+- `Transfer_Learning/Unfreeze_Ratio` - Progressive unfreezing ratio (if enabled)
+- `Transfer_Learning/Trainable_Params` - Number of trainable parameters over time
+
+**Histograms Tab:**
+- `Weights/*` - Weight distributions for each layer (logged periodically)
+- Useful for monitoring weight initialization and gradient flow
+
+**Graphs Tab:**
+- Model architecture visualization (if enabled)
+
+#### Troubleshooting TensorBoard
+
+**TensorBoard not loading in Colab:**
+- Ensure the `%load_ext tensorboard` command was run
+- Check that the log directory path is correct (use relative path: `checkpoints/tensorboard/`)
+- Verify that training has completed and logs were written
+
+**TensorBoard shows "No dashboards are active":**
+- Check that the log directory contains event files: `ls checkpoints/tensorboard/`
+- Ensure the path is correct (no leading slash in Colab)
+- Try refreshing the TensorBoard interface
+
+**TensorBoard not starting locally:**
+- Verify TensorBoard is installed: `pip install tensorboard`
+- Check that the log directory exists and contains event files
+- Try specifying the full path: `tensorboard --logdir /absolute/path/to/logs`
+- Check if port 6006 is already in use: `lsof -i :6006`
+
+**Viewing Multiple Experiments:**
+```bash
+# Compare multiple runs
+tensorboard --logdir checkpoints/ --port 6006
+```
+
+This will show all subdirectories under `checkpoints/` as separate runs in TensorBoard.
+
+#### Advanced: Custom TensorBoard Logging
+
+If you're using a custom training loop, you can manually log to TensorBoard:
+
+```python
+from torch.utils.tensorboard import SummaryWriter
+
+# Create writer
+writer = SummaryWriter('runs/my_experiment')
+
+# Log scalars
+writer.add_scalar('Loss/Train', train_loss, epoch)
+writer.add_scalar('Loss/Val', val_loss, epoch)
+writer.add_scalar('Accuracy/Train', train_acc, epoch)
+writer.add_scalar('Accuracy/Val', val_acc, epoch)
+
+# Log Tversky parameters
+if hasattr(model, 'tversky_proj'):
+    writer.add_scalar('Tversky/Alpha', model.tversky_proj.alpha.item(), epoch)
+    writer.add_scalar('Tversky/Beta', model.tversky_proj.beta.item(), epoch)
+
+# Log histograms (periodically)
+if epoch % 10 == 0:
+    for name, param in model.named_parameters():
+        writer.add_histogram(f'Weights/{name}', param, epoch)
+
+# Close writer when done
+writer.close()
+```
+
+Then view with:
+```bash
+tensorboard --logdir runs/my_experiment
+```
 
 ### Config-Driven Architecture
 
